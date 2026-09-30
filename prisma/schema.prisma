@@ -1,0 +1,176 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum ShowStatus {
+  WATCHING
+  COMPLETED
+  ON_HOLD
+  DROPPED
+  PLAN_TO_WATCH
+}
+
+model Show {
+  id           String         @id @default(cuid())
+  userId       String         @default("")
+  tmdbId       Int?
+  tvdbId       Int?
+  imdbId       String?
+  title        String
+  overview     String?
+  posterPath   String?
+  backdropPath String?
+  status       ShowStatus     @default(PLAN_TO_WATCH)
+  userRating   Int?
+  inWatchlist  Boolean        @default(false)
+  isCustom     Boolean        @default(false)
+  firstAirDate String?
+  genres       String?
+  tmdbStatus   String?
+  /** Total de eps (TMDB ou custom); usado na progress bar da home. */
+  totalEpisodes Int?
+  /** Eps já exibidos ainda não assistidos (cache TMDB). */
+  unwatchedAiredCount Int?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  episodes     EpisodeWatch[]
+  seasons      LocalSeason[]
+
+  @@unique([userId, tmdbId])
+  @@index([status])
+  @@index([inWatchlist])
+  @@index([isCustom])
+  @@index([userId])
+}
+
+model LocalSeason {
+  id           String         @id @default(cuid())
+  showId       String
+  show         Show           @relation(fields: [showId], references: [id], onDelete: Cascade)
+  seasonNumber Int
+  name         String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  episodes     LocalEpisode[]
+
+  @@unique([showId, seasonNumber])
+  @@index([showId])
+}
+
+model LocalEpisode {
+  id             String      @id @default(cuid())
+  seasonId       String
+  season         LocalSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  episodeNumber  Int
+  name           String?
+  overview       String?
+  airDate        String?
+  runtimeMinutes Int?
+  stillPath      String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([seasonId, episodeNumber])
+  @@index([seasonId])
+}
+
+model EpisodeWatch {
+  id             String    @id @default(cuid())
+  showId         String
+  show           Show      @relation(fields: [showId], references: [id], onDelete: Cascade)
+  seasonNumber   Int
+  episodeNumber  Int
+  tvdbId         Int?
+  episodeName    String?
+  watched        Boolean   @default(true)
+  watchedAt      DateTime?
+  rating         Int?
+  runtimeMinutes Int?
+  createdAt      DateTime  @default(now())
+
+  @@unique([showId, seasonNumber, episodeNumber])
+  @@index([watched])
+}
+
+model CatalogShow {
+  id           String   @id @default(cuid())
+  tmdbId       Int      @unique
+  tvdbId       Int?
+  imdbId       String?
+  title        String
+  overview     String?
+  posterPath   String?
+  backdropPath String?
+  firstAirDate String?
+  voteAverage  Float?
+  popularity   Float?
+  genres       String?
+  category     String
+  syncedAt     DateTime @default(now())
+
+  @@index([category])
+  @@index([popularity])
+}
+
+model ImportLog {
+  id              String          @id @default(cuid())
+  userId          String          @default("")
+  source          String
+  showsAdded      Int             @default(0)
+  episodesAdded   Int             @default(0)
+  episodesSkipped Int             @default(0)
+  errors          Int             @default(0)
+  details         String?
+  createdAt       DateTime        @default(now())
+  addedShows      ImportLogShow[]
+
+  @@index([userId])
+}
+
+model ImportLogShow {
+  id            String    @id @default(cuid())
+  importLogId   String
+  importLog     ImportLog @relation(fields: [importLogId], references: [id], onDelete: Cascade)
+  tmdbId        Int?
+  title         String
+  posterPath    String?
+  episodesAdded Int       @default(0)
+  isNew         Boolean   @default(false)
+
+  @@index([importLogId])
+}
+
+enum ImportJobStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model ImportJob {
+  id              String          @id @default(cuid())
+  userId          String          @default("")
+  status          ImportJobStatus @default(RUNNING)
+  phase           String          @default("parsing")
+  current         Int             @default(0)
+  total           Int             @default(0)
+  label           String?
+  format          String?
+  filesProcessed  String?
+  importLogId     String?
+  error           String?
+  statsJson       String?
+  cancelRequested Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([userId])
+}
