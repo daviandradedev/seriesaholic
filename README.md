@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SeriesAholic
 
-## Getting Started
+Tracker de séries. A biblioteca funciona sem conta neste navegador. Entrar no [auth hub](https://auth.daviandrade.dev) guarda os dados na mesma conta dos outros apps.
 
-First, run the development server:
+## O que faz
+
+- Biblioteca: assistindo, quero ver, em dia, concluídas e abandonadas
+- Descobrir, buscar e calendário via TMDB
+- Marcar episódio ou a temporada inteira
+- Série manual
+- Importação do TV Time (ZIP do GDPR, Liberator ou JSON)
+- Estatísticas do tempo assistido
+- Português e inglês, tema claro e escuro
+
+Sem login, os dados ficam no cookie de convidado e somem quando a janela fecha. O login leva essa biblioteca para a conta.
+
+## Stack
+
+Next.js 16, React 19, Tailwind, Prisma e Neon PostgreSQL. Metadados no TMDB. Sessão com better-auth, o mesmo banco e o mesmo segredo do auth hub.
+
+## Setup
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+cp .env.example .env
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Preencha `.env` com o Neon (`DATABASE_URL` e `DIRECT_URL`), a chave do TMDB e as variáveis de auth. `AUTH_DATABASE_URL` e `BETTER_AUTH_SECRET` são os mesmos do hub. No localhost, `BETTER_AUTH_COOKIE_DOMAIN` fica vazio. Em `*.daviandrade.dev`, o domínio do cookie é `.daviandrade.dev`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+A chave do TMDB sai de https://www.themoviedb.org/settings/api.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+pnpm run db:setup
+pnpm run dev
+```
 
-## Learn More
+Abra http://localhost:3000.
 
-To learn more about Next.js, take a look at the following resources:
+`pnpm run db:setup` aplica as migrations e popula o catálogo. O compute gratuito do Neon hiberna. `connect_timeout` de 30s no `.env.example` evita a falha de conexão no cold start.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Importar o TV Time
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Baixe o export em https://gdpr.tvtime.com/gdpr/self-service
+2. Abra Importar
+3. Envie o `.zip`, um `.csv` ou um `.json`
 
-## Deploy on Vercel
+## Scripts
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Comando | Descrição |
+| --- | --- |
+| `pnpm run dev` | Servidor de desenvolvimento |
+| `pnpm test` | Testes |
+| `pnpm run db:migrate` | Aplica as migrations |
+| `pnpm run db:seed` | Popula o catálogo |
+| `pnpm run db:setup` | Migra e popula |
