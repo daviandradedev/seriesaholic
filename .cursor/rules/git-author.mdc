@@ -1,0 +1,17 @@
+---
+description: Commits belong only to the GitHub account daviandradedev
+alwaysApply: true
+---
+
+# Git author
+
+Before every commit, check `git config user.name` and `git config user.email` in this repository.
+
+- Name: `daviandradedev`
+- Email: `201659124+daviandradedev@users.noreply.github.com`
+
+If either value differs, stop and set them with `git config --local` for this repository only. Do not change global git config.
+
+The commit author is that account alone. Do not add a co-author trailer. Do not mention Cursor, cursoragent, or any other account in the message, the author, or the committer.
+
+Do not rewrite published history and do not force-push `main` unless the user explicitly asks for that.

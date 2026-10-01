@@ -1,0 +1,15 @@
+#!/bin/sh
+message_file=$1
+cleaned=$(mktemp)
+grep -viE 'cursor|cursoragent' "$message_file" > "$cleaned" || true
+mv "$cleaned" "$message_file"
+
+name=${GIT_AUTHOR_NAME:-$(git config user.name)}
+email=${GIT_AUTHOR_EMAIL:-$(git config user.email)}
+expected_name=daviandradedev
+expected_email=201659124+daviandradedev@users.noreply.github.com
+
+if [ "$name" != "$expected_name" ] || [ "$email" != "$expected_email" ]; then
+  echo "Commit author must be ${expected_name} <${expected_email}>." >&2
+  exit 1
+fi
