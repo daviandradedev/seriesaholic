@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth, authHubUrlPublic } from "@/lib/auth";
+import { auth } from "@/lib/auth";
+import { authHubUrlForHost } from "@/lib/auth-public";
 import { claimGuestLibrary } from "@/lib/claim-guest";
 import { GUEST_COOKIE, isGuestId } from "@/lib/guest-session";
 
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
   );
 
   if (!verifyResponse.ok) {
-    const login = new URL(authHubUrlPublic);
+    const login = new URL(authHubUrlForHost(request.nextUrl.hostname));
     login.searchParams.set("callbackURL", new URL(nextPath, request.url).toString());
     return NextResponse.redirect(login);
   }

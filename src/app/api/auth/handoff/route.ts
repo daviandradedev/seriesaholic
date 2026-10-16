@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth, authHubUrlPublic } from "@/lib/auth";
+import { auth } from "@/lib/auth";
+import { authHubUrlForHost } from "@/lib/auth-public";
 import { hubAccountHandoffUrl } from "@/lib/profile-handoff";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const hub = authHubUrlPublic.replace(/\/$/, "");
+  const hub = authHubUrlForHost(request.nextUrl.hostname).replace(/\/$/, "");
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session) {
     return NextResponse.redirect(hub);

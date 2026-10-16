@@ -1,11 +1,12 @@
 import { createAuthClient } from "better-auth/react";
+import { authHubUrlForHost, clientAppBaseUrl } from "@/lib/auth-public";
 
 export const authClient = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+  baseURL: clientAppBaseUrl(),
 });
 
 export function goToLogin(callbackURL = typeof window !== "undefined" ? window.location.href : "/") {
-  const hub = process.env.NEXT_PUBLIC_AUTH_URL ?? "http://localhost:3100";
+  const hub = authHubUrlForHost(typeof window !== "undefined" ? window.location.hostname : null);
   const url = new URL(hub);
   url.searchParams.set("callbackURL", callbackURL);
   window.location.href = url.toString();
