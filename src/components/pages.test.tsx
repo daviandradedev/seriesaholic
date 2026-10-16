@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import DiscoverPage from "@/app/discover/page";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DiscoverCatalog } from "@/components/DiscoverCatalog";
 import { DashboardStatsBar } from "@/components/DashboardStatsBar";
 import { NavBar } from "@/components/NavBar";
 import { SiteFooter } from "@/components/SiteFooter";
@@ -35,10 +35,38 @@ describe("ErrorState", () => {
   });
 });
 
-describe("DiscoverPage", () => {
+describe("DiscoverCatalog", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
   it("shows Home pointing at the added shows", () => {
-    const { container } = renderUi(<DiscoverPage />);
+    vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => ({ shows: [] }) })));
+    const { container } = renderUi(<DiscoverCatalog signedIn={false} />);
     expect(within(container).getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
+  });
+
+  it("starts on All and hides For you when signed out", async () => {
+    const fetchMock = vi.fn(async () => ({ json: async () => ({ shows: [], stats: { total: 0, categories: [] } }) }));
+    vi.stubGlobal("fetch", fetchMock);
+    renderUi(<DiscoverCatalog signedIn={false} />);
+
+    expect(screen.queryByRole("button", { name: "For you" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "All" })).toHaveClass("bg-violet-600");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/api/catalog?limit=48");
+    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain("recommendations");
+  });
+
+  it("starts on For you when signed in", async () => {
+    const fetchMock = vi.fn(async () => ({ json: async () => ({ shows: [], profile: { topGenres: [], totalWeightedEpisodes: 0 } }) }));
+    vi.stubGlobal("fetch", fetchMock);
+    renderUi(<DiscoverCatalog signedIn />);
+
+    expect(screen.getByRole("button", { name: "For you" })).toHaveClass("bg-emerald-600");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("/api/recommendations?limit=48");
   });
 });
 
