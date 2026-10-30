@@ -4,6 +4,8 @@ import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { getFinishedShowsPage } from "@/lib/shows";
 import { numberLocale } from "@/lib/copy";
 import { getTranslator } from "@/lib/i18n";
+import { SignInRequired } from "@/components/SignInRequired";
+import { getOptionalUserId } from "@/lib/session-user";
 import { formatDate, posterUrl } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +15,11 @@ export default async function FinishedShowsPage({
 }: {
   searchParams: Promise<{ page?: string }>;
 }) {
+  if (!(await getOptionalUserId())) return <SignInRequired />;
   const { t, language } = await getTranslator();
   const { page: pageParam } = await searchParams;
   const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
-  const { shows, total, totalPages, page: current } = await getFinishedShowsPage(page);
+  const { shows, total, totalPages, page: current } = await getFinishedShowsPage(page, language);
 
   return (
     <div className="space-y-6">

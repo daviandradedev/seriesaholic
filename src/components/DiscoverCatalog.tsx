@@ -23,7 +23,7 @@ type CatalogShow = {
 
 type CatalogStats = {
   total: number;
-  categories: Array<{ category: string; label: string; count: number }>;
+  categories: Array<{ category: string; count: number }>;
 };
 
 type TasteProfile = {
@@ -50,6 +50,7 @@ export function DiscoverCatalog({ signedIn }: { signedIn: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const { language, t } = usePreferences();
   const tabs = TABS.filter((tab) => signedIn || tab.key !== "for_you");
+  const canSync = signedIn && category !== "for_you";
 
   const load = useCallback(async (cat: string) => {
     setError(null);
@@ -137,7 +138,7 @@ export function DiscoverCatalog({ signedIn }: { signedIn: boolean }) {
             <Home className="h-4 w-4" />
             {t("home")}
           </Link>
-          {category !== "for_you" && (
+          {canSync && (
             <button
               type="button"
               onClick={syncCatalog}
@@ -184,7 +185,7 @@ export function DiscoverCatalog({ signedIn }: { signedIn: boolean }) {
           <p className="text-zinc-400">
             {category === "for_you" ? t("discoverEmptyPersonal") : t("discoverEmpty")}
           </p>
-          {category !== "for_you" && (
+          {canSync && (
             <button
               type="button"
               onClick={syncCatalog}

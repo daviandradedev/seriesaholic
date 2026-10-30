@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { ChevronRight } from "lucide-react";
 import { usePreferences } from "@/components/Preferences";
+import { localizedTitle } from "@/lib/localized";
 import { posterUrl, cn } from "@/lib/utils";
 import type { WatchQueueShow } from "@/lib/watch-queue";
 import type { ShowStatus } from "@prisma/client";
@@ -23,7 +24,8 @@ function WatchQueueCard({
   show: WatchQueueShow;
   priority?: boolean;
 }) {
-  const { t } = usePreferences();
+  const { language, t } = usePreferences();
+  const title = localizedTitle(language, show);
   const poster = posterUrl(show.posterPath, "w342");
   const overlay =
     show.status === "DROPPED"
@@ -40,7 +42,7 @@ function WatchQueueCard({
         {poster ? (
           <Image
             src={poster}
-            alt={show.title}
+            alt={title}
             fill
             priority={priority}
             loading={priority ? "eager" : "lazy"}
@@ -78,7 +80,7 @@ function WatchQueueCard({
         )}
       </div>
       <p className="mt-1.5 truncate text-xs text-zinc-400 group-hover:text-white">
-        {show.title}
+        {title}
       </p>
     </Link>
   );

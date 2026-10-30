@@ -5,6 +5,8 @@ import { ImportFailureResolver } from "@/components/ImportFailureResolver";
 import { parseImportLogDetails } from "@/lib/import-resolve";
 import { getImportLog } from "@/lib/shows";
 import { getTranslator } from "@/lib/i18n";
+import { SignInRequired } from "@/components/SignInRequired";
+import { getOptionalUserId } from "@/lib/session-user";
 import { formatDate } from "@/lib/utils";
 import { notFound } from "next/navigation";
 
@@ -15,9 +17,10 @@ export default async function ImportDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  if (!(await getOptionalUserId())) return <SignInRequired />;
   const { t, language } = await getTranslator();
   const { id } = await params;
-  const log = await getImportLog(id);
+  const log = await getImportLog(id, language);
   if (!log) notFound();
 
   const details = parseImportLogDetails(log.details);

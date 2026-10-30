@@ -8,6 +8,8 @@ import {
 } from "@/lib/domain-logic";
 import { withSchemaFallback } from "@/lib/prisma-safe";
 import { requireUserId } from "@/lib/session-user";
+import { genreLabel, localizedTitle } from "@/lib/localized";
+import type { Language } from "@/lib/copy";
 
 export type ScoredShow = {
   tmdbId: number;
@@ -98,7 +100,11 @@ async function loadCatalogCandidates(trackedIds: number[]) {
   });
 }
 
-export async function getPersonalizedRecommendations(limit = 48, userId?: string): Promise<{
+export async function getPersonalizedRecommendations(
+  limit = 48,
+  userId?: string,
+  language: Language = "pt",
+): Promise<{
   profile: UserTasteProfile;
   shows: ScoredShow[];
 }> {
@@ -122,7 +128,7 @@ export async function getPersonalizedRecommendations(limit = 48, userId?: string
     const { score, matching } = scoreShowCompatibility(genres, profile);
     return {
       tmdbId: show.tmdbId,
-      title: show.title,
+      title: localizedTitle(language, show),
       posterPath: show.posterPath,
       voteAverage: show.voteAverage,
       firstAirDate: show.firstAirDate,
@@ -132,12 +138,20 @@ export async function getPersonalizedRecommendations(limit = 48, userId?: string
     };
   });
 
+  const localize = (result: { profile: UserTasteProfile; shows: ScoredShow[] }) => ({
+    profile: { ...result.profile, topGenres: result.profile.topGenres.map((g) => genreLabel(language, g)) },
+    shows: result.shows.map((show) => ({
+      ...show,
+      matchingGenres: show.matchingGenres.map((g) => genreLabel(language, g)),
+    })),
+  });
+
   scored.sort((a, b) => b.compatibilityScore - a.compatibilityScore);
 
   const topScored = scored.filter((s) => s.compatibilityScore > 0).slice(0, limit);
 
   if (topScored.length >= limit || profile.topGenres.length === 0) {
-    return { profile, shows: topScored.slice(0, limit) };
+    return localize({ profile, shows: topScored.slice(0, limit) });
   }
 
   const genreMap = await getGenreIdMap();
@@ -149,8 +163,13 @@ export async function getPersonalizedRecommendations(limit = 48, userId?: string
   if (genreIds.length > 0) {
     const seen = new Set([...trackedIds, ...topScored.map((s) => s.tmdbId)]);
     try {
-      const discovered = await discoverByGenres(genreIds, 1);
+      const [discovered, english] = await Promise.all([
+        discoverByGenres(genreIds, 1),
+        discoverByGenres(genreIds, 1, "en-US").catch(() => ({ results: [], total_pages: 0 })),
+      ]);
+      const englishById = new Map(english.results.map((item) => [item.id, item]));
       for (const item of discovered.results) {
+        const en = englishById.get(item.id);
         if (seen.has(item.id)) continue;
         seen.add(item.id);
 
@@ -166,7 +185,9 @@ export async function getPersonalizedRecommendations(limit = 48, userId?: string
                 create: {
                   tmdbId: item.id,
                   title: item.name,
+                  titleEn: en?.name || null,
                   overview: item.overview,
+                  overviewEn: en?.overview || null,
                   posterPath: item.poster_path,
                   backdropPath: item.backdrop_path,
                   firstAirDate: item.first_air_date,
@@ -178,6 +199,8 @@ export async function getPersonalizedRecommendations(limit = 48, userId?: string
                 update: {
                   genres: genreJson,
                   popularity: item.popularity ?? undefined,
+                  titleEn: en?.name || undefined,
+                  overviewEn: en?.overview || undefined,
                 },
               }),
             () => undefined,
@@ -188,7 +211,7 @@ export async function getPersonalizedRecommendations(limit = 48, userId?: string
         const { score, matching } = scoreShowCompatibility(genres, profile);
         topScored.push({
           tmdbId: item.id,
-          title: item.name,
+          title: localizedTitle(language, { title: item.name, titleEn: en?.name }),
           posterPath: item.poster_path,
           voteAverage: item.vote_average,
           firstAirDate: item.first_air_date,
@@ -204,5 +227,5 @@ export async function getPersonalizedRecommendations(limit = 48, userId?: string
     }
   }
 
-  return { profile, shows: topScored.slice(0, limit) };
+  return localize({ profile, shows: topScored.slice(0, limit) });
 }

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Ban, CheckCircle2, Pencil, Trash2 } from "lucide-react";
+import { Ban, CheckCircle2, Pencil, Plus, Trash2 } from "lucide-react";
 import { EpisodeList } from "@/components/EpisodeList";
 import { PageLoading } from "@/components/PageLoading";
 import { usePreferences } from "@/components/Preferences";
@@ -13,6 +13,8 @@ import { backdropUrl, cn, posterUrl } from "@/lib/utils";
 import { saveWasRejected } from "@/lib/login-redirect";
 
 type ShowData = {
+  inLibrary: boolean;
+  display: { title: string; overview: string | null };
   show: {
     id: string;
     tmdbId: number | null;
@@ -138,17 +140,8 @@ export default function ShowPage() {
   if (error === "not_found") {
     return (
       <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
-        <p className="text-zinc-400">{t("notInLibrary")}</p>
-        {/^\d+$/.test(showKey) && (
-          <button
-            type="button"
-            onClick={addToLibrary}
-            disabled={adding}
-            className="mt-4 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50"
-          >
-            {adding ? t("adding") : t("addToLibrary")}
-          </button>
-        )}
+        <p className="font-medium text-white">{t("notFoundTitle")}</p>
+        <p className="mt-2 text-sm text-zinc-400">{t("notFoundBody")}</p>
       </div>
     );
   }
@@ -163,30 +156,45 @@ export default function ShowPage() {
     data.totalEpisodes > 0
       ? Math.round((data.watchedCount / data.totalEpisodes) * 100)
       : 0;
-  const isCompleted = data.show.status === "COMPLETED";
-  const isDropped = data.show.status === "DROPPED";
+  const { inLibrary, display } = data;
+  const isCompleted = inLibrary && data.show.status === "COMPLETED";
+  const isDropped = inLibrary && data.show.status === "DROPPED";
   const canDrop = !isDropped;
   const editId = data.show.id;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap justify-end gap-2">
-        <Link
-          href={`/shows/${editId}/edit`}
-          className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/5"
-        >
-          <Pencil className="h-4 w-4" />
-          {t("edit")}
-        </Link>
-        <button
-          type="button"
-          onClick={removeShow}
-          disabled={deleting}
-          className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 px-3 py-1.5 text-sm text-red-300 hover:bg-red-500/10 disabled:opacity-50"
-        >
-          <Trash2 className="h-4 w-4" />
-          {deleting ? t("deleting") : t("delete")}
-        </button>
+        {inLibrary ? (
+          <>
+            <Link
+              href={`/shows/${editId}/edit`}
+              className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/5"
+            >
+              <Pencil className="h-4 w-4" />
+              {t("edit")}
+            </Link>
+            <button
+              type="button"
+              onClick={removeShow}
+              disabled={deleting}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 px-3 py-1.5 text-sm text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+            >
+              <Trash2 className="h-4 w-4" />
+              {deleting ? t("deleting") : t("delete")}
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={addToLibrary}
+            disabled={adding}
+            className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" />
+            {adding ? t("adding") : t("addToLibrary")}
+          </button>
+        )}
       </div>
 
       <div className="relative overflow-hidden rounded-2xl border border-white/5">
@@ -208,7 +216,7 @@ export default function ShowPage() {
             {poster && (
               <Image
                 src={poster}
-                alt={data.show.title}
+                alt={display.title}
                 fill
                 sizes="128px"
                 className={cn(
@@ -228,7 +236,7 @@ export default function ShowPage() {
           <div className="flex-1 text-center md:text-left">
             <div className="flex flex-wrap items-center justify-center gap-2 md:justify-start">
               <h1 className="text-2xl font-bold text-white md:text-3xl">
-                {data.show.title}
+                {display.title}
               </h1>
               {isCompleted && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-xs font-medium text-emerald-300">
@@ -249,42 +257,46 @@ export default function ShowPage() {
               {t("episodesCount", { n: data.details.number_of_episodes })}
             </p>
             <p className="mt-3 line-clamp-3 text-sm text-zinc-300">
-              {data.show.overview}
+              {display.overview}
             </p>
-            <div className="mt-4">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-zinc-400">
-                  {t("watchedOf", { watched: data.watchedCount, total: data.totalEpisodes })}
-                </span>
-                <span className={cn(progress >= 100 ? "text-emerald-400" : "text-violet-400")}>
-                  {progress}%
-                </span>
+            {inLibrary && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-zinc-400">
+                    {t("watchedOf", { watched: data.watchedCount, total: data.totalEpisodes })}
+                  </span>
+                  <span className={cn(progress >= 100 ? "text-emerald-400" : "text-violet-400")}>
+                    {progress}%
+                  </span>
+                </div>
+                <ProgressBar value={progress} complete={progress >= 100} className="mt-2" />
               </div>
-              <ProgressBar value={progress} complete={progress >= 100} className="mt-2" />
-            </div>
-            <div className="mt-4 flex flex-wrap justify-center gap-2 md:justify-start">
-              {canDrop && (
-                <button
-                  type="button"
-                  onClick={() => setStatus("DROPPED")}
-                  disabled={updatingStatus}
-                  className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50"
-                >
-                  <Ban className="h-4 w-4" />
-                  {updatingStatus ? t("saving") : t("dropShow")}
-                </button>
-              )}
-              {isDropped && (
-                <button
-                  type="button"
-                  onClick={() => setStatus("WATCHING")}
-                  disabled={updatingStatus}
-                  className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2 text-sm text-zinc-300 hover:bg-white/5 disabled:opacity-50"
-                >
-                  {updatingStatus ? t("saving") : t("resumeWatching")}
-                </button>
-              )}
-            </div>
+            )}
+            {inLibrary && (
+              <div className="mt-4 flex flex-wrap justify-center gap-2 md:justify-start">
+                {canDrop && (
+                  <button
+                    type="button"
+                    onClick={() => setStatus("DROPPED")}
+                    disabled={updatingStatus}
+                    className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+                  >
+                    <Ban className="h-4 w-4" />
+                    {updatingStatus ? t("saving") : t("dropShow")}
+                  </button>
+                )}
+                {isDropped && (
+                  <button
+                    type="button"
+                    onClick={() => setStatus("WATCHING")}
+                    disabled={updatingStatus}
+                    className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2 text-sm text-zinc-300 hover:bg-white/5 disabled:opacity-50"
+                  >
+                    {updatingStatus ? t("saving") : t("resumeWatching")}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -292,8 +304,10 @@ export default function ShowPage() {
       <section>
         <h2 className="mb-4 text-lg font-semibold text-white">{t("episodesHeading")}</h2>
         <EpisodeList
+          key={`${showKey}-${inLibrary}`}
           showId={showKey}
           seasons={data.seasons}
+          readOnly={!inLibrary}
           onToggle={(patch) => {
             if (!patch) return;
             setData((current) =>

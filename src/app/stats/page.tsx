@@ -8,18 +8,21 @@ import {
 } from "@/components/stats/StatsCards";
 import { numberLocale } from "@/lib/copy";
 import { getTranslator } from "@/lib/i18n";
+import { SignInRequired } from "@/components/SignInRequired";
+import { getOptionalUserId } from "@/lib/session-user";
 import { formatWatchTimeDetailed } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 export default async function StatsPage() {
+  if (!(await getOptionalUserId())) return <SignInRequired />;
   const { t, language } = await getTranslator();
   const locale = numberLocale(language);
   let stats: Awaited<ReturnType<typeof getWatchStats>> | null = null;
   let error: string | null = null;
 
   try {
-    stats = await getWatchStats();
+    stats = await getWatchStats(language);
   } catch (err) {
     error = err instanceof Error ? err.message : t("statsLoadError");
   }

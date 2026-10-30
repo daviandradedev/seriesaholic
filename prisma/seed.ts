@@ -16,7 +16,7 @@ const CATEGORIES = [
 ] as const;
 
 async function main() {
-  console.log("Populando catálogo TMDB no Neon...");
+  console.log("Seeding the TMDB catalog...");
   const seen = new Set<number>();
   let upserted = 0;
 
@@ -24,8 +24,12 @@ async function main() {
     console.log(`\n→ ${key}`);
 
     for (let page = 1; page <= 5; page++) {
-      const data = await fetch(page);
-      console.log(`  página ${page}: ${data.results.length} séries`);
+      const [data, english] = await Promise.all([
+        fetch(page, "pt-BR"),
+        fetch(page, "en-US").catch(() => ({ results: [], total_pages: 0 })),
+      ]);
+      const englishById = new Map(english.results.map((show) => [show.id, show]));
+      console.log(`  page ${page}: ${data.results.length} shows`);
 
       for (const show of data.results) {
         if (seen.has(show.id)) continue;
@@ -34,6 +38,7 @@ async function main() {
         const external = await getShowDetails(show.id)
           .then((details) => details.external_ids)
           .catch(() => undefined);
+        const en = englishById.get(show.id);
 
         await prisma.catalogShow.upsert({
           where: { tmdbId: show.id },
@@ -42,7 +47,9 @@ async function main() {
             tvdbId: external?.tvdb_id ?? null,
             imdbId: external?.imdb_id ?? null,
             title: show.name,
+            titleEn: en?.name || null,
             overview: show.overview,
+            overviewEn: en?.overview || null,
             posterPath: show.poster_path,
             backdropPath: show.backdrop_path,
             firstAirDate: show.first_air_date,
@@ -52,7 +59,9 @@ async function main() {
           },
           update: {
             title: show.name,
+            titleEn: en?.name || undefined,
             overview: show.overview,
+            overviewEn: en?.overview || undefined,
             posterPath: show.poster_path,
             backdropPath: show.backdrop_path,
             voteAverage: show.vote_average,
@@ -69,7 +78,7 @@ async function main() {
     }
   }
 
-  console.log(`\n✓ ${upserted} séries cadastradas no catálogo (${seen.size} únicas)`);
+  console.log(`\n✓ ${upserted} catalog shows saved (${seen.size} unique)`);
 }
 
 main()

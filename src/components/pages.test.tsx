@@ -8,6 +8,7 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { EpisodeList } from "@/components/EpisodeList";
 import { ErrorState } from "@/components/ErrorState";
 import { PreferencesProvider } from "@/components/Preferences";
+import { SignInRequired } from "@/components/SignInRequired";
 import { WatchQueueSection } from "@/components/WatchQueueSection";
 
 function renderUi(ui: ReactNode) {
@@ -57,6 +58,15 @@ describe("DiscoverCatalog", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/api/catalog?limit=48");
     expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain("recommendations");
+  });
+
+  it("hides the catalog refresh from visitors", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ shows: [] })));
+    vi.stubGlobal("fetch", fetchMock);
+    renderUi(<DiscoverCatalog signedIn={false} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "Refresh catalog" })).not.toBeInTheDocument();
   });
 
   it("starts on For you when signed in", async () => {
@@ -139,6 +149,7 @@ describe("WatchQueueSection", () => {
             id: "1",
             tmdbId: 1,
             title: "Show A",
+            titleEn: null,
             posterPath: null,
             status: "COMPLETED",
             watchedCount: 10,
@@ -156,6 +167,7 @@ describe("WatchQueueSection", () => {
             id: "2",
             tmdbId: 2,
             title: "Show B",
+            titleEn: null,
             posterPath: null,
             status: "DROPPED",
             watchedCount: 3,
@@ -178,7 +190,44 @@ describe("WatchQueueSection", () => {
   });
 });
 
+describe("SignInRequired", () => {
+  it("offers sign-in and a way back to Discover", () => {
+    const { container } = renderUi(<SignInRequired />);
+    const view = within(container);
+
+    expect(view.getByRole("heading", { name: "Sign in to see your library" })).toBeInTheDocument();
+    expect(view.getByRole("button", { name: "Sign in or create an account" })).toBeInTheDocument();
+    expect(view.getByRole("link", { name: "Discover shows" })).toHaveAttribute("href", "/discover");
+  });
+});
+
 describe("EpisodeList", () => {
+  it("lists episodes without any way to mark them in read-only mode", () => {
+    const { container } = renderUi(
+      <EpisodeList
+        showId="1"
+        readOnly
+        onToggle={() => {}}
+        seasons={[
+          {
+            season_number: 1,
+            name: "Season 1",
+            watchedCount: 0,
+            episodes: [
+              { season_number: 1, episode_number: 1, name: "Pilot", air_date: null, watched: false },
+            ],
+          },
+        ]}
+      />,
+    );
+    const view = within(container);
+
+    fireEvent.click(view.getByRole("button", { name: /Season 1/ }));
+    expect(view.getByText("1. Pilot")).toBeInTheDocument();
+    expect(view.queryByRole("button", { name: /Pilot/ })).not.toBeInTheDocument();
+    expect(view.queryByRole("button", { name: "Mark all" })).not.toBeInTheDocument();
+  });
+
   it("does not nest buttons in the season header", () => {
     renderUi(
       <EpisodeList

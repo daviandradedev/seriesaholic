@@ -1,9 +1,9 @@
 import { unstable_cache } from "next/cache";
 import { getDashboardStats } from "@/lib/shows";
 import { getWatchQueue } from "@/lib/watch-queue";
-import { getUpcomingEpisodes } from "@/lib/tmdb";
+import { getUpcomingEpisodes, tmdbLanguage } from "@/lib/tmdb";
+import type { Language } from "@/lib/copy";
 import { HOME_TMDB_CACHE_TAG, LIBRARY_CACHE_TAG } from "@/lib/cache-tags";
-import { requireUserId } from "@/lib/session-user";
 
 async function loadHomeLibrary(userId: string) {
   const [stats, queue] = await Promise.all([
@@ -24,23 +24,17 @@ async function loadHomeLibrary(userId: string) {
   return { stats, queue, watchingTmdbIds };
 }
 
-const loadCachedHomeLibrary = unstable_cache(loadHomeLibrary, ["home-library"], {
+export const getCachedHomeLibrary = unstable_cache(loadHomeLibrary, ["home-library"], {
   tags: [LIBRARY_CACHE_TAG],
   revalidate: 60,
 });
 
-export async function getCachedHomeLibrary() {
-  const userId = await requireUserId();
-  return loadCachedHomeLibrary(userId);
-}
-
-export async function getCachedHomeUpcoming(watchingTmdbIds: number[]) {
+export async function getCachedHomeUpcoming(watchingTmdbIds: number[], language: Language) {
   if (watchingTmdbIds.length === 0) return [];
-  const userId = await requireUserId();
   const key = watchingTmdbIds.slice().sort((a, b) => a - b).join(",");
   return unstable_cache(
-    () => getUpcomingEpisodes(watchingTmdbIds).catch(() => []),
-    ["home-upcoming", userId, key],
+    () => getUpcomingEpisodes(watchingTmdbIds, tmdbLanguage(language)).catch(() => []),
+    ["home-upcoming", language, key],
     { tags: [HOME_TMDB_CACHE_TAG], revalidate: 3600 },
   )();
 }

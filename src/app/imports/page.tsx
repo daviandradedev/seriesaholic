@@ -2,11 +2,14 @@ import Link from "next/link";
 import { History } from "lucide-react";
 import { getImportLogs } from "@/lib/shows";
 import { getTranslator } from "@/lib/i18n";
+import { SignInRequired } from "@/components/SignInRequired";
+import { getOptionalUserId } from "@/lib/session-user";
 import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 export default async function ImportsPage() {
+  if (!(await getOptionalUserId())) return <SignInRequired />;
   const { t, language } = await getTranslator();
   const logs = await getImportLogs();
 

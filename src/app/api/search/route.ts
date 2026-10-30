@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { searchShows } from "@/lib/tmdb";
+import { searchShows, tmdbLanguage } from "@/lib/tmdb";
 import { prisma } from "@/lib/db";
-import { requireUserId } from "@/lib/session-user";
+import { getTranslator } from "@/lib/i18n";
+import { getOptionalUserId } from "@/lib/session-user";
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,11 +11,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ results: [] });
     }
 
-    const data = await searchShows(query);
-    const tracked = await prisma.show.findMany({
-      where: { userId: await requireUserId(), tmdbId: { in: data.results.map((r) => r.id) } },
-      select: { tmdbId: true, status: true },
-    });
+    const [{ language }, userId] = await Promise.all([getTranslator(), getOptionalUserId()]);
+    const data = await searchShows(query, 1, undefined, tmdbLanguage(language));
+    const tracked = userId
+      ? await prisma.show.findMany({
+          where: { userId, tmdbId: { in: data.results.map((r) => r.id) } },
+          select: { tmdbId: true, status: true },
+        })
+      : [];
     const trackedMap = new Map(tracked.map((t) => [t.tmdbId, t.status]));
 
     const results = data.results.map((r) => ({

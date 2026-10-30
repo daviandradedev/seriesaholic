@@ -19,6 +19,7 @@ export type WatchQueueShow = {
   id: string;
   tmdbId: number | null;
   title: string;
+  titleEn: string | null;
   posterPath: string | null;
   status: ShowStatus;
   watchedCount: number;
@@ -51,6 +52,7 @@ type ShowRow = {
   id: string;
   tmdbId: number | null;
   title: string;
+  titleEn: string | null;
   posterPath: string | null;
   status: ShowStatus;
   tmdbStatus: string | null;
@@ -79,6 +81,7 @@ function toEntry(
     id: string;
     tmdbId: number | null;
     title: string;
+    titleEn: string | null;
     posterPath: string | null;
     status: ShowStatus;
     tmdbStatus: string | null;
@@ -99,6 +102,7 @@ function toEntry(
     id: show.id,
     tmdbId: show.tmdbId,
     title: show.title,
+    titleEn: show.titleEn,
     posterPath: show.posterPath,
     status: show.status,
     watchedCount,
@@ -473,6 +477,7 @@ async function loadShowsForFastQueue(userId: string): Promise<ShowRow[]> {
         id: true,
         tmdbId: true,
         title: true,
+        titleEn: true,
         posterPath: true,
         status: true,
         tmdbStatus: true,
@@ -494,6 +499,7 @@ async function loadShowsForFastQueue(userId: string): Promise<ShowRow[]> {
         id: true,
         tmdbId: true,
         title: true,
+        titleEn: true,
         posterPath: true,
         status: true,
         tmdbStatus: true,

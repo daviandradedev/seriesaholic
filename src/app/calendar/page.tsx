@@ -1,7 +1,10 @@
 import Link from "next/link";
-import { getShowsWithProgress } from "@/lib/shows";
-import { getSeasonDetails, getShowDetails } from "@/lib/tmdb";
+import { SignInRequired } from "@/components/SignInRequired";
+import { getCalendarShows } from "@/lib/shows";
+import { getSeasonDetails, getShowDetails, tmdbLanguage, type TmdbLanguage } from "@/lib/tmdb";
 import { getTranslator } from "@/lib/i18n";
+import { localizedTitle } from "@/lib/localized";
+import { getOptionalUserId } from "@/lib/session-user";
 import { formatDate, startOfDay } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -21,18 +24,17 @@ type WatchingShow = {
 };
 
 export default async function CalendarPage() {
+  if (!(await getOptionalUserId())) return <SignInRequired />;
   const { t, language } = await getTranslator();
-  const shows = (await getShowsWithProgress("WATCHING")).filter(
-    (s) => s.watchedCount > 0,
-  );
+  const shows = await getCalendarShows();
 
   const today = startOfDay(new Date());
   const end = new Date(today);
   end.setDate(end.getDate() + 30);
 
-  const watched = shows.filter((show) => show.tmdbId != null).slice(0, 15);
-  const groups = await mapWithConcurrency(watched, 4, (show) =>
-    upcomingForShow(show, today, end),
+  const lang = tmdbLanguage(language);
+  const groups = await mapWithConcurrency(shows, 4, (show) =>
+    upcomingForShow({ tmdbId: show.tmdbId, title: localizedTitle(language, show) }, today, end, lang),
   );
   const entries = groups.flat();
 
@@ -83,10 +85,15 @@ export default async function CalendarPage() {
   );
 }
 
-async function upcomingForShow(show: WatchingShow, today: Date, end: Date): Promise<CalendarEntry[]> {
+async function upcomingForShow(
+  show: WatchingShow,
+  today: Date,
+  end: Date,
+  language: TmdbLanguage,
+): Promise<CalendarEntry[]> {
   if (show.tmdbId == null) return [];
   try {
-    const details = await getShowDetails(show.tmdbId);
+    const details = await getShowDetails(show.tmdbId, undefined, language);
     const lastSeason = details.number_of_seasons;
     if (lastSeason <= 0) return [];
 
@@ -98,7 +105,7 @@ async function upcomingForShow(show: WatchingShow, today: Date, end: Date): Prom
     const seasons = await Promise.all(
       seasonNumbers.map(async (seasonNumber) => {
         try {
-          return await getSeasonDetails(show.tmdbId!, seasonNumber);
+          return await getSeasonDetails(show.tmdbId!, seasonNumber, language);
         } catch {
           return null;
         }
@@ -114,7 +121,7 @@ async function upcomingForShow(show: WatchingShow, today: Date, end: Date): Prom
         if (air < today || air > end) continue;
         entries.push({
           tmdbId: show.tmdbId,
-          showTitle: show.title,
+          showTitle: details.name || show.title,
           seasonNumber: episode.season_number,
           episodeNumber: episode.episode_number,
           episodeName: episode.name,

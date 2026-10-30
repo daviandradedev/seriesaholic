@@ -7,10 +7,13 @@ const pt = {
   settingsPage: "Configurações",
   preferences: "Preferências",
   profile: "Perfil no daviandrade auth",
-  guestEyebrow: "Sessão temporária",
-  guestTitle: "Dá para usar tudo sem conta",
-  guestLogin: "Entrar e salvar",
-  guestContinue: "Continuar nesta sessão",
+  guestEyebrow: "Sem conta",
+  guestTitle: "Explore à vontade, salve com uma conta",
+  guestLogin: "Entrar ou criar conta",
+  guestContinue: "Continuar explorando",
+  signInRequiredTitle: "Entre para ver sua biblioteca",
+  signInRequiredBody:
+    "Sem conta você pode descobrir, buscar e ver séries e episódios. Para adicionar, marcar episódios, importar ou ver estatísticas, entre ou crie uma conta.",
   work: "Meu trabalho",
   workBody:
     "Sou Davi Andrade. O Seriesaholic é um dos apps do portfólio, na mesma conta dos outros projetos.",
@@ -25,7 +28,7 @@ const pt = {
   langPt: "Idioma: Português",
   langEn: "Idioma: Inglês",
   guestBody:
-    "Adicionar séries, marcar episódios, descobrir e importar funciona agora. Isso fica só neste navegador e some quando a janela fechar. Entre para guardar na conta e abrir de novo quando quiser.",
+    "Sem conta você descobre, busca e vê séries e episódios. Nada é guardado. Para adicionar séries, marcar episódios ou importar do TV Time, entre ou crie uma conta.",
   guestWork: "Seriesaholic faz parte do trabalho de Davi Andrade.",
   portfolio: "Portfólio",
   continueBrowsing: "Continuar sem entrar",
@@ -302,10 +305,13 @@ const en: { [K in keyof typeof pt]: string } = {
   settingsPage: "Settings",
   preferences: "Preferences",
   profile: "Profile on daviandrade auth",
-  guestEyebrow: "Temporary session",
-  guestTitle: "You can use everything without an account",
-  guestLogin: "Sign in and save",
-  guestContinue: "Continue in this session",
+  guestEyebrow: "No account",
+  guestTitle: "Explore freely, save with an account",
+  guestLogin: "Sign in or create an account",
+  guestContinue: "Keep exploring",
+  signInRequiredTitle: "Sign in to see your library",
+  signInRequiredBody:
+    "Without an account you can discover, search, and view shows and episodes. To add shows, mark episodes, import, or see stats, sign in or create an account.",
   work: "My work",
   workBody:
     "I'm Davi Andrade. Seriesaholic is one of the portfolio apps, on the same account as the other projects.",
@@ -320,7 +326,7 @@ const en: { [K in keyof typeof pt]: string } = {
   langPt: "Language: Portuguese",
   langEn: "Language: English",
   guestBody:
-    "Adding shows, marking episodes, discovering, and importing works right now. It stays in this browser and disappears when the window closes. Sign in to keep it on your account and open it again whenever you want.",
+    "Without an account you can discover, search, and view shows and episodes. Nothing is stored. To add shows, mark episodes, or import from TV Time, sign in or create an account.",
   guestWork: "Seriesaholic is part of Davi Andrade's work.",
   portfolio: "Portfolio",
   continueBrowsing: "Continue without logging in",

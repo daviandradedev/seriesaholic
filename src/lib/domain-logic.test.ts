@@ -488,6 +488,7 @@ describe("import work", () => {
             tvdbId: 99,
             imdbId: "tt1",
             title: "Local",
+            titleEn: null,
             posterPath: null,
             status: "WATCHING" as const,
             inWatchlist: false,

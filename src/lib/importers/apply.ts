@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import {
   clearResolveCache,
+  getEnglishShowText,
   getShowDetails,
   parseTitleYear,
   resolveShowFromExternalIds,
@@ -35,6 +36,7 @@ type LocalShow = {
   tvdbId: number | null;
   imdbId: string | null;
   title: string;
+  titleEn: string | null;
   posterPath: string | null;
   status: ShowStatus;
   inWatchlist: boolean;
@@ -86,7 +88,10 @@ async function upsertShowFromTmdb(
   },
   signal?: AbortSignal,
 ) {
-  const details = await getShowDetails(tmdbId, signal);
+  const [details, english] = await Promise.all([
+    getShowDetails(tmdbId, signal),
+    existing?.titleEn ? null : getEnglishShowText(tmdbId, signal).catch(() => null),
+  ]);
   const external = details.external_ids;
   const meta = genresFromTmdb(details);
 
@@ -103,6 +108,7 @@ async function upsertShowFromTmdb(
         firstAirDate: details.first_air_date,
         totalEpisodes: details.number_of_episodes,
         ...meta,
+        ...english,
         userRating: existing.userRating ?? extras?.userRating ?? undefined,
         inWatchlist: extras?.inWatchlist ? true : existing.inWatchlist,
         status:
@@ -130,6 +136,7 @@ async function upsertShowFromTmdb(
       firstAirDate: details.first_air_date,
       totalEpisodes: details.number_of_episodes,
       ...meta,
+      ...english,
       inWatchlist: extras?.inWatchlist ?? false,
       userRating: extras?.userRating ?? null,
       status,
@@ -270,6 +277,7 @@ export async function applyImportItems(
       tvdbId: true,
       imdbId: true,
       title: true,
+      titleEn: true,
       posterPath: true,
       status: true,
       inWatchlist: true,
@@ -471,6 +479,7 @@ export async function applyImportItems(
               tvdbId: show.tvdbId,
               imdbId: show.imdbId,
               title: show.title,
+              titleEn: show.titleEn,
               posterPath: show.posterPath,
               status: show.status,
               inWatchlist: show.inWatchlist,

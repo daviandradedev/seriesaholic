@@ -17,28 +17,30 @@ enum ShowStatus {
 }
 
 model Show {
-  id           String         @id @default(cuid())
-  userId       String         @default("")
-  tmdbId       Int?
-  tvdbId       Int?
-  imdbId       String?
-  title        String
-  overview     String?
-  posterPath   String?
-  backdropPath String?
-  status       ShowStatus     @default(PLAN_TO_WATCH)
-  userRating   Int?
-  inWatchlist  Boolean        @default(false)
-  isCustom     Boolean        @default(false)
-  firstAirDate String?
-  genres       String?
-  tmdbStatus   String?
-  totalEpisodes Int?
+  id                  String         @id @default(cuid())
+  userId              String         @default("")
+  tmdbId              Int?
+  tvdbId              Int?
+  imdbId              String?
+  title               String
+  titleEn             String?
+  overview            String?
+  overviewEn          String?
+  posterPath          String?
+  backdropPath        String?
+  status              ShowStatus     @default(PLAN_TO_WATCH)
+  userRating          Int?
+  inWatchlist         Boolean        @default(false)
+  isCustom            Boolean        @default(false)
+  firstAirDate        String?
+  genres              String?
+  tmdbStatus          String?
+  totalEpisodes       Int?
   unwatchedAiredCount Int?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  episodes     EpisodeWatch[]
-  seasons      LocalSeason[]
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  episodes            EpisodeWatch[]
+  seasons             LocalSeason[]
 
   @@unique([userId, tmdbId])
   @@index([status])
@@ -102,7 +104,9 @@ model CatalogShow {
   tvdbId       Int?
   imdbId       String?
   title        String
+  titleEn      String?
   overview     String?
+  overviewEn   String?
   posterPath   String?
   backdropPath String?
   firstAirDate String?

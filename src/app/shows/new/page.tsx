@@ -1,11 +1,14 @@
 import { ShowForm } from "@/components/ShowForm";
+import { SignInRequired } from "@/components/SignInRequired";
 import { getTranslator } from "@/lib/i18n";
+import { getOptionalUserId } from "@/lib/session-user";
 
 export default async function NewShowPage({
   searchParams,
 }: {
   searchParams: Promise<{ title?: string }>;
 }) {
+  if (!(await getOptionalUserId())) return <SignInRequired />;
   const { t } = await getTranslator();
   const { title } = await searchParams;
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { redirectToAuthLogin } from "@/lib/login-redirect";
 import { usePreferences } from "@/components/Preferences";
 
@@ -121,15 +121,4 @@ export function GuestSessionModal() {
       </div>
     </div>
   );
-}
-
-export function GuestClaim() {
-  useEffect(() => {
-    if (sessionStorage.getItem("sah-claimed") === "1") return;
-    void fetch("/api/auth/claim-guest", { method: "POST" }).finally(() => {
-      sessionStorage.setItem("sah-claimed", "1");
-    });
-  }, []);
-
-  return null;
 }

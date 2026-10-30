@@ -3,16 +3,20 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 import { DashboardStatsBar } from "@/components/DashboardStatsBar";
 import { HomeRecommendations } from "@/components/HomeRecommendations";
+import { SignInRequired } from "@/components/SignInRequired";
 import { WatchQueueSection, HOME_QUEUE_PREVIEW } from "@/components/WatchQueueSection";
 import { getCachedHomeLibrary, getCachedHomeUpcoming } from "@/lib/home-data";
 import { getTranslator } from "@/lib/i18n";
+import { getOptionalUserId } from "@/lib/session-user";
 import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
+  const userId = await getOptionalUserId();
+  if (!userId) return <SignInRequired />;
   const { t } = await getTranslator();
-  const { stats, queue, watchingTmdbIds } = await getCachedHomeLibrary();
+  const { stats, queue, watchingTmdbIds } = await getCachedHomeLibrary(userId);
 
   const hasQueue =
     queue.watchNext.length > 0 ||
@@ -126,7 +130,7 @@ export default async function HomePage() {
 
 async function HomeUpcoming({ watchingTmdbIds }: { watchingTmdbIds: number[] }) {
   const { t, language } = await getTranslator();
-  const upcoming = await getCachedHomeUpcoming(watchingTmdbIds);
+  const upcoming = await getCachedHomeUpcoming(watchingTmdbIds, language);
   if (upcoming.length === 0) return null;
 
   return (

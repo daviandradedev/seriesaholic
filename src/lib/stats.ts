@@ -5,6 +5,8 @@ import { catchUpEpisodesPerWeek, isShowInProduction, sumRealMinutes } from "@/li
 import { backfillWatchRuntimes } from "@/lib/watch-runtime";
 import { requireUserId } from "@/lib/session-user";
 import { startOfDay } from "@/lib/utils";
+import { genreLabel, localizedTitle } from "@/lib/localized";
+import type { Language } from "@/lib/copy";
 
 export type WeeklyBucket = {
   label: string;
@@ -157,7 +159,7 @@ async function getUpcomingForWatchingShows(
   return upcoming;
 }
 
-export async function getWatchStats(): Promise<WatchStats> {
+export async function getWatchStats(language: Language = "pt"): Promise<WatchStats> {
   const userId = await requireUserId();
   await backfillShowGenres(40, userId);
   await backfillWatchRuntimes({ maxSeasons: 8, userId });
@@ -303,7 +305,7 @@ export async function getWatchStats(): Promise<WatchStats> {
     const show = showMap.get(row.showId);
     const minutes = Number(row.minutes ?? 0);
     return {
-      showTitle: show?.title ?? "Show",
+      showTitle: show ? localizedTitle(language, show) : "Show",
       showTmdbId: show?.tmdbId ?? 0,
       episodes: Number(row.episodes),
       hours: minutes > 0 ? Math.round(minutes / 60) : 0,
@@ -319,7 +321,7 @@ export async function getWatchStats(): Promise<WatchStats> {
   }
 
   const topGenres = [...genreCounts.entries()]
-    .map(([genre, count]) => ({ genre, shows: count }))
+    .map(([genre, count]) => ({ genre: genreLabel(language, genre), shows: count }))
     .sort((a, b) => b.shows - a.shows)
     .slice(0, 10);
 

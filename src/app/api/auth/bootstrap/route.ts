@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { authHubUrlForHost } from "@/lib/auth-public";
-import { claimGuestLibrary } from "@/lib/claim-guest";
-import { GUEST_COOKIE, isGuestId } from "@/lib/guest-session";
 
 export const runtime = "nodejs";
 
@@ -29,25 +27,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(login);
   }
 
-  const setCookies = verifyResponse.headers.getSetCookie();
-  const payload = (await verifyResponse.json().catch(() => null)) as { user?: { id?: string } } | null;
-  const guestId = request.cookies.get(GUEST_COOKIE)?.value;
-  let claimed = false;
-  if (payload?.user?.id && isGuestId(guestId)) {
-    try {
-      await claimGuestLibrary(guestId, payload.user.id);
-      claimed = true;
-    } catch {
-      claimed = false;
-    }
-  }
-
   const redirect = NextResponse.redirect(new URL(nextPath, request.url));
-  for (const cookie of setCookies) {
+  for (const cookie of verifyResponse.headers.getSetCookie()) {
     redirect.headers.append("Set-Cookie", cookie);
-  }
-  if (claimed) {
-    redirect.cookies.set(GUEST_COOKIE, "", { httpOnly: true, path: "/", maxAge: 0 });
   }
   return redirect;
 }

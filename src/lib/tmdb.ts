@@ -1,6 +1,13 @@
 import https from "node:https";
+import type { Language } from "@/lib/copy";
 
 const TMDB_BASE = "https://api.themoviedb.org/3";
+
+export type TmdbLanguage = "pt-BR" | "en-US";
+
+export function tmdbLanguage(language: Language): TmdbLanguage {
+  return language === "en" ? "en-US" : "pt-BR";
+}
 
 const resolveCache = new Map<string, number | null>();
 
@@ -78,10 +85,11 @@ async function tmdbFetch<T>(
   path: string,
   params: Record<string, string> = {},
   signal?: AbortSignal,
+  language: TmdbLanguage = "pt-BR",
 ): Promise<T> {
   const url = new URL(`${TMDB_BASE}${path}`);
   url.searchParams.set("api_key", getApiKey());
-  url.searchParams.set("language", "pt-BR");
+  url.searchParams.set("language", language);
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, v);
   }
@@ -153,27 +161,34 @@ export type TmdbEpisode = {
   runtime: number | null;
 };
 
-export async function searchShows(query: string, page = 1, year?: number) {
+export async function searchShows(
+  query: string,
+  page = 1,
+  year?: number,
+  language: TmdbLanguage = "pt-BR",
+) {
   const params: Record<string, string> = { query, page: String(page) };
   if (year) params.first_air_date_year = String(year);
   return tmdbFetch<{ results: TmdbSearchResult[]; total_pages: number }>(
     "/search/tv",
     params,
+    undefined,
+    language,
   );
 }
 
 type TmdbListResponse = { results: TmdbSearchResult[]; total_pages: number };
 
-export async function getTrendingShows(page = 1) {
-  return tmdbFetch<TmdbListResponse>("/trending/tv/day", { page: String(page) });
+export async function getTrendingShows(page = 1, language: TmdbLanguage = "pt-BR") {
+  return tmdbFetch<TmdbListResponse>("/trending/tv/day", { page: String(page) }, undefined, language);
 }
 
-export async function getPopularShows(page = 1) {
-  return tmdbFetch<TmdbListResponse>("/tv/popular", { page: String(page) });
+export async function getPopularShows(page = 1, language: TmdbLanguage = "pt-BR") {
+  return tmdbFetch<TmdbListResponse>("/tv/popular", { page: String(page) }, undefined, language);
 }
 
-export async function getTopRatedShows(page = 1) {
-  return tmdbFetch<TmdbListResponse>("/tv/top_rated", { page: String(page) });
+export async function getTopRatedShows(page = 1, language: TmdbLanguage = "pt-BR") {
+  return tmdbFetch<TmdbListResponse>("/tv/top_rated", { page: String(page) }, undefined, language);
 }
 
 let genreIdCache: Map<string, number> | null = null;
@@ -185,24 +200,47 @@ export async function getGenreIdMap() {
   return genreIdCache;
 }
 
-export async function discoverByGenres(genreIds: number[], page = 1) {
-  return tmdbFetch<TmdbListResponse>("/discover/tv", {
-    with_genres: genreIds.join(","),
-    sort_by: "popularity.desc",
-    page: String(page),
-  });
+export async function discoverByGenres(
+  genreIds: number[],
+  page = 1,
+  language: TmdbLanguage = "pt-BR",
+) {
+  return tmdbFetch<TmdbListResponse>(
+    "/discover/tv",
+    {
+      with_genres: genreIds.join(","),
+      sort_by: "popularity.desc",
+      page: String(page),
+    },
+    undefined,
+    language,
+  );
 }
 
-export async function getShowDetails(tmdbId: number, signal?: AbortSignal) {
+export async function getShowDetails(
+  tmdbId: number,
+  signal?: AbortSignal,
+  language: TmdbLanguage = "pt-BR",
+) {
   return tmdbFetch<TmdbShowDetails>(
     `/tv/${tmdbId}`,
     { append_to_response: "external_ids" },
     signal,
+    language,
   );
 }
 
-export async function getSeasonDetails(tmdbId: number, seasonNumber: number) {
-  return tmdbFetch<TmdbSeason>(`/tv/${tmdbId}/season/${seasonNumber}`);
+export async function getEnglishShowText(tmdbId: number, signal?: AbortSignal) {
+  const show = await tmdbFetch<TmdbSearchResult>(`/tv/${tmdbId}`, {}, signal, "en-US");
+  return { titleEn: show.name || null, overviewEn: show.overview || null };
+}
+
+export async function getSeasonDetails(
+  tmdbId: number,
+  seasonNumber: number,
+  language: TmdbLanguage = "pt-BR",
+) {
+  return tmdbFetch<TmdbSeason>(`/tv/${tmdbId}/season/${seasonNumber}`, {}, undefined, language);
 }
 
 type TmdbFindByTvdb = {
@@ -332,7 +370,7 @@ export async function getEpisodeRuntime(
   return ep?.runtime ?? null;
 }
 
-export async function getUpcomingEpisodes(tmdbIds: number[]) {
+export async function getUpcomingEpisodes(tmdbIds: number[], language: TmdbLanguage = "pt-BR") {
   const episodes: Array<{
     tmdbShowId: number;
     showName: string;
@@ -349,8 +387,8 @@ export async function getUpcomingEpisodes(tmdbIds: number[]) {
 
   for (const tmdbId of tmdbIds.slice(0, 20)) {
     try {
-      const show = await getShowDetails(tmdbId);
-      const season = await getSeasonDetails(tmdbId, show.number_of_seasons);
+      const show = await getShowDetails(tmdbId, undefined, language);
+      const season = await getSeasonDetails(tmdbId, show.number_of_seasons, language);
       for (const ep of season.episodes) {
         if (!ep.air_date) continue;
         const air = new Date(ep.air_date);

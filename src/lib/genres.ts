@@ -95,6 +95,7 @@ export async function findShowsForStats() {
           id: true,
           tmdbId: true,
           title: true,
+          titleEn: true,
           status: true,
           genres: true,
           tmdbStatus: true,
@@ -114,6 +115,7 @@ export async function findShowsForStats() {
             id: true,
             tmdbId: true,
             title: true,
+            titleEn: true,
             status: true,
             posterPath: true,
             _count: {

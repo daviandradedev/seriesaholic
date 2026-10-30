@@ -61,11 +61,13 @@ export function EpisodeList({
   tmdbId,
   seasons,
   onToggle,
+  readOnly = false,
 }: {
   showId?: string;
   tmdbId?: number;
   seasons: Season[];
   onToggle: (patch?: { watchedCount: number; status?: string }) => void;
+  readOnly?: boolean;
 }) {
   const id = showId ?? String(tmdbId ?? "");
   const { theme, t } = usePreferences();
@@ -269,19 +271,21 @@ export function EpisodeList({
                   {watchedCount}/{total}
                 </span>
               </button>
-              <button
-                type="button"
-                disabled={busy || total === 0}
-                onClick={() => void markSeason(season.season_number, !allWatched)}
-                className={cn(
-                  "ml-2 shrink-0 rounded-md px-2 py-1 text-xs disabled:opacity-50",
-                  allWatched
-                    ? "text-zinc-400 hover:bg-white/5"
-                    : "text-violet-400 hover:bg-violet-500/10",
-                )}
-              >
-                {busy ? t("saving") : allWatched ? t("unmarkAll") : t("markAll")}
-              </button>
+              {!readOnly && (
+                <button
+                  type="button"
+                  disabled={busy || total === 0}
+                  onClick={() => void markSeason(season.season_number, !allWatched)}
+                  className={cn(
+                    "ml-2 shrink-0 rounded-md px-2 py-1 text-xs disabled:opacity-50",
+                    allWatched
+                      ? "text-zinc-400 hover:bg-white/5"
+                      : "text-violet-400 hover:bg-violet-500/10",
+                  )}
+                >
+                  {busy ? t("saving") : allWatched ? t("unmarkAll") : t("markAll")}
+                </button>
+              )}
             </div>
 
             {total > 0 && (
@@ -294,6 +298,16 @@ export function EpisodeList({
               <div className="border-t border-white/5">
                 {season.episodes.map((ep) => {
                   const key = episodeKey(ep);
+                  if (readOnly) {
+                    return (
+                      <p
+                        key={key}
+                        className="truncate border-b border-white/[0.03] px-4 py-2.5 text-sm text-white last:border-0"
+                      >
+                        {ep.episode_number}. {ep.name}
+                      </p>
+                    );
+                  }
                   const watched = episodeWatched(ep);
                   return (
                     <button

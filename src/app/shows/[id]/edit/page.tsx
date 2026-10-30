@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { ShowForm } from "@/components/ShowForm";
+import { SignInRequired } from "@/components/SignInRequired";
 import { getTranslator } from "@/lib/i18n";
+import { getOptionalUserId } from "@/lib/session-user";
 import { getShowWithSeasons } from "@/lib/shows";
 
 export const dynamic = "force-dynamic";
@@ -10,10 +12,11 @@ export default async function EditShowPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  if (!(await getOptionalUserId())) return <SignInRequired />;
   const { t } = await getTranslator();
   const { id } = await params;
   const data = await getShowWithSeasons(id);
-  if (!data) notFound();
+  if (!data?.inLibrary) notFound();
 
   const genres = Array.isArray(data.details.genres)
     ? data.details.genres.map((g: { name: string }) => g.name).join(", ")

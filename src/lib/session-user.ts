@@ -1,7 +1,5 @@
-import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/api/auth";
-import { GUEST_COOKIE, GUEST_HEADER, isGuestId } from "@/lib/guest-session";
 
 export class UnauthorizedError extends Error {
   constructor(message = "Unauthorized") {
@@ -15,16 +13,8 @@ export async function getOptionalUserId(): Promise<string | null> {
   return user?.id ?? null;
 }
 
-async function readGuestId() {
-  const headerList = await headers();
-  const fromHeader = headerList.get(GUEST_HEADER);
-  if (isGuestId(fromHeader)) return fromHeader;
-  const fromCookie = (await cookies()).get(GUEST_COOKIE)?.value;
-  return isGuestId(fromCookie) ? fromCookie : null;
-}
-
 export async function requireUserId(): Promise<string> {
-  const userId = (await getOptionalUserId()) ?? (await readGuestId());
+  const userId = await getOptionalUserId();
   if (!userId) throw new UnauthorizedError();
   return userId;
 }

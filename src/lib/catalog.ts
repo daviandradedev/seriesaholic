@@ -4,22 +4,18 @@ import {
   getTopRatedShows,
   getTrendingShows,
   getShowDetails,
+  type TmdbLanguage,
 } from "@/lib/tmdb";
 import { serializeGenres } from "@/lib/genres";
 import { withSchemaFallback } from "@/lib/prisma-safe";
-import { requireUserId } from "@/lib/session-user";
+import { localizedTitle } from "@/lib/localized";
+import type { Language } from "@/lib/copy";
 
 export type CatalogCategory = "trending" | "popular" | "top_rated";
 
-const CATEGORY_LABELS: Record<CatalogCategory, string> = {
-  trending: "Em alta",
-  popular: "Populares",
-  top_rated: "Mais bem avaliadas",
-};
-
 const FETCHERS: Record<
   CatalogCategory,
-  (page: number) => ReturnType<typeof getTrendingShows>
+  (page: number, language: TmdbLanguage) => ReturnType<typeof getTrendingShows>
 > = {
   trending: getTrendingShows,
   popular: getPopularShows,
@@ -40,7 +36,11 @@ export async function syncCatalogFromTmdb() {
     const fetchPage = FETCHERS[category];
 
     for (let page = 1; page <= 5; page++) {
-      const data = await fetchPage(page);
+      const [data, english] = await Promise.all([
+        fetchPage(page, "pt-BR"),
+        fetchPage(page, "en-US").catch(() => ({ results: [], total_pages: 0 })),
+      ]);
+      const englishById = new Map(english.results.map((show) => [show.id, show]));
 
       for (const show of data.results) {
         if (seen.has(show.id)) continue;
@@ -55,12 +55,15 @@ export async function syncCatalogFromTmdb() {
         } catch {
         }
 
+        const en = englishById.get(show.id);
         const baseCreate = {
           tmdbId: show.id,
           tvdbId: external?.tvdb_id ?? null,
           imdbId: external?.imdb_id ?? null,
           title: show.name,
+          titleEn: en?.name || null,
           overview: show.overview,
+          overviewEn: en?.overview || null,
           posterPath: show.poster_path,
           backdropPath: show.backdrop_path,
           firstAirDate: show.first_air_date,
@@ -73,7 +76,9 @@ export async function syncCatalogFromTmdb() {
           tvdbId: external?.tvdb_id ?? undefined,
           imdbId: external?.imdb_id ?? undefined,
           title: show.name,
+          titleEn: en?.name || undefined,
           overview: show.overview,
+          overviewEn: en?.overview || undefined,
           posterPath: show.poster_path,
           backdropPath: show.backdrop_path,
           firstAirDate: show.first_air_date,
@@ -116,14 +121,14 @@ export async function syncCatalogIfEmpty() {
   return { synced: true as const, ...result };
 }
 
-export async function getDiscoverShows(options?: {
+export async function getDiscoverShows(options: {
   category?: CatalogCategory;
   limit?: number;
-  excludeTracked?: boolean;
+  userId: string | null;
+  language: Language;
 }) {
-  const { category, limit = 24, excludeTracked = true } = options ?? {};
+  const { category, limit = 24, userId, language } = options;
 
-  const userId = excludeTracked ? await requireUserId() : null;
   const trackedIds = userId
     ? collectTrackedTmdbIds(
         await prisma.show.findMany({
@@ -133,16 +138,28 @@ export async function getDiscoverShows(options?: {
       )
     : [];
 
-  return prisma.catalogShow.findMany({
+  const rows = await prisma.catalogShow.findMany({
     where: {
       ...(category ? { category } : {}),
-      ...(excludeTracked && trackedIds.length > 0
-        ? { tmdbId: { notIn: trackedIds } }
-        : {}),
+      ...(trackedIds.length > 0 ? { tmdbId: { notIn: trackedIds } } : {}),
+    },
+    select: {
+      tmdbId: true,
+      title: true,
+      titleEn: true,
+      posterPath: true,
+      voteAverage: true,
+      firstAirDate: true,
+      category: true,
     },
     orderBy: [{ popularity: "desc" }, { voteAverage: "desc" }],
     take: limit,
   });
+
+  return rows.map(({ titleEn, ...row }) => ({
+    ...row,
+    title: localizedTitle(language, { title: row.title, titleEn }),
+  }));
 }
 
 export async function getCatalogStats() {
@@ -158,7 +175,6 @@ export async function getCatalogStats() {
     total,
     categories: byCategory.map((c) => ({
       category: c.category as CatalogCategory,
-      label: CATEGORY_LABELS[c.category as CatalogCategory] ?? c.category,
       count: c._count.category,
     })),
   };

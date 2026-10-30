@@ -1,74 +1,141 @@
 import { prisma } from "@/lib/db";
-import { getEpisodeRuntime, getSeasonDetails, getShowDetails } from "@/lib/tmdb";
+import {
+  getEnglishShowText,
+  getEpisodeRuntime,
+  getSeasonDetails,
+  getShowDetails,
+  tmdbLanguage,
+  type TmdbLanguage,
+} from "@/lib/tmdb";
 import { genresFromTmdb, parseGenresJson } from "@/lib/genres";
 import { withSchemaFallback } from "@/lib/prisma-safe";
 import { inferLibraryStatus, isRegularSeason } from "@/lib/domain-logic";
-import { progressPercent, showPath } from "@/lib/utils";
+import { showPath } from "@/lib/utils";
 import { invalidateLibraryCache } from "@/lib/cache-tags";
 import { getTotalWatchMinutesFromDb } from "@/lib/watch-runtime";
 import { recomputeShowAiredPending } from "@/lib/watch-queue";
-import { requireUserId } from "@/lib/session-user";
+import { getOptionalUserId, requireUserId } from "@/lib/session-user";
+import { genreLabel, localizedOverview, localizedTitle } from "@/lib/localized";
+import type { Language } from "@/lib/copy";
 import type { ShowStatus } from "@prisma/client";
 
 export { showPath };
 
-export async function resolveShowParam(id: string) {
-  const userId = await requireUserId();
+export async function resolveShowParam(id: string, userId?: string) {
+  const scopeUserId = userId ?? (await requireUserId());
   if (/^\d+$/.test(id)) {
     const byTmdb = await prisma.show.findFirst({
-      where: { userId, tmdbId: parseInt(id, 10) },
+      where: { userId: scopeUserId, tmdbId: parseInt(id, 10) },
     });
     if (byTmdb) return byTmdb;
   }
-  return prisma.show.findFirst({ where: { userId, id } });
+  return prisma.show.findFirst({ where: { userId: scopeUserId, id } });
 }
 
-function genreLabels(raw: string | null | undefined) {
-  return parseGenresJson(raw).map((name) => ({ name }));
-}
-
-export async function getShowsWithProgress(status?: ShowStatus) {
+export async function searchLibraryShows(query: string, language: Language, take = 8) {
   const userId = await requireUserId();
   const shows = await prisma.show.findMany({
-    where: { userId, ...(status ? { status } : {}) },
-    include: {
-      _count: {
-        select: {
-          episodes: { where: { watched: true, seasonNumber: { gte: 1 } } },
-        },
-      },
-      seasons: { include: { _count: { select: { episodes: true } } } },
+    where: {
+      userId,
+      OR: [
+        { title: { contains: query, mode: "insensitive" } },
+        { titleEn: { contains: query, mode: "insensitive" } },
+      ],
     },
+    select: { id: true, tmdbId: true, title: true, titleEn: true, posterPath: true },
     orderBy: { updatedAt: "desc" },
+    take,
   });
+  return shows.map((show) => ({
+    id: show.id,
+    title: localizedTitle(language, show),
+    posterPath: show.posterPath,
+    href: showPath(show),
+  }));
+}
 
+export async function getCalendarShows(take = 15) {
+  const userId = await requireUserId();
+  return prisma.show.findMany({
+    where: {
+      userId,
+      status: "WATCHING",
+      tmdbId: { not: null },
+      episodes: { some: { watched: true, seasonNumber: { gte: 1 } } },
+    },
+    select: { tmdbId: true, title: true, titleEn: true },
+    orderBy: { updatedAt: "desc" },
+    take,
+  });
+}
+
+type EpisodeWatchRow = Awaited<ReturnType<typeof prisma.episodeWatch.findMany>>[number];
+
+async function loadTmdbSeasons(
+  tmdbId: number,
+  seasonCount: number,
+  language: TmdbLanguage,
+  watchedMap: Map<string, EpisodeWatchRow>,
+  showId: string,
+) {
   return Promise.all(
-    shows.map(async (show) => {
-      let totalEpisodes = 0;
-      if (show.isCustom || show.tmdbId == null) {
-        totalEpisodes = show.seasons.reduce((s, season) => s + season._count.episodes, 0);
-      } else {
-        try {
-          const details = await getShowDetails(show.tmdbId);
-          totalEpisodes = details.number_of_episodes;
-        } catch {
-          totalEpisodes = show._count.episodes;
-        }
-      }
-
+    Array.from({ length: seasonCount }, (_, i) => i + 1).map(async (seasonNumber) => {
+      const season = await getSeasonDetails(tmdbId, seasonNumber, language);
+      const episodes = season.episodes.map((ep) => {
+        const watch = watchedMap.get(`${ep.season_number}-${ep.episode_number}`);
+        return {
+          ...ep,
+          watched: watch?.watched ?? false,
+          watchedAt: watch?.watchedAt ?? null,
+          rating: watch?.rating ?? null,
+          watchId: watch ? `${showId}-${ep.season_number}-${ep.episode_number}` : null,
+        };
+      });
       return {
-        ...show,
-        watchedCount: show._count.episodes,
-        totalEpisodes,
-        progress: progressPercent(show._count.episodes, totalEpisodes),
+        ...season,
+        episodes,
+        watchedCount: episodes.filter((e) => e.watched).length,
       };
     }),
   );
 }
 
-export async function getShowWithSeasons(id: string) {
-  const show = await resolveShowParam(id);
-  if (!show) return null;
+async function getShowPreview(tmdbId: number, language: Language) {
+  const lang = tmdbLanguage(language);
+  const details = await getShowDetails(tmdbId, undefined, lang).catch(() => null);
+  if (!details) return null;
+  const seasons = await loadTmdbSeasons(
+    tmdbId,
+    details.number_of_seasons,
+    lang,
+    new Map(),
+    String(tmdbId),
+  );
+  return {
+    inLibrary: false as const,
+    show: {
+      id: String(tmdbId),
+      tmdbId,
+      title: details.name,
+      overview: details.overview,
+      posterPath: details.poster_path,
+      backdropPath: details.backdrop_path,
+      status: "PLAN_TO_WATCH" as ShowStatus,
+      isCustom: false,
+      tmdbStatus: details.status,
+    },
+    display: { title: details.name, overview: details.overview },
+    details,
+    seasons,
+    watchedCount: 0,
+    totalEpisodes: details.number_of_episodes,
+  };
+}
+
+export async function getShowWithSeasons(id: string, language: Language = "pt") {
+  const userId = await getOptionalUserId();
+  const show = userId ? await resolveShowParam(id, userId) : null;
+  if (!show) return /^\d+$/.test(id) ? getShowPreview(parseInt(id, 10), language) : null;
 
   const watches = await prisma.episodeWatch.findMany({
     where: { showId: show.id, seasonNumber: { gte: 1 } },
@@ -79,9 +146,12 @@ export async function getShowWithSeasons(id: string) {
     watches.map((e) => [`${e.seasonNumber}-${e.episodeNumber}`, e]),
   );
 
-  const useLocal = show.isCustom || show.tmdbId == null;
+  const stored = {
+    title: localizedTitle(language, show),
+    overview: localizedOverview(language, show),
+  };
 
-  if (useLocal) {
+  if (show.isCustom || show.tmdbId == null) {
     const localSeasons = await prisma.localSeason.findMany({
       where: { showId: show.id },
       include: { episodes: { orderBy: { episodeNumber: "asc" } } },
@@ -122,12 +192,14 @@ export async function getShowWithSeasons(id: string) {
     const watchedCount = watches.filter((e) => e.watched).length;
 
     return {
+      inLibrary: true as const,
       show,
+      display: stored,
       details: {
         number_of_seasons: seasons.length,
         number_of_episodes: totalEpisodes,
         vote_average: 0,
-        genres: genreLabels(show.genres),
+        genres: parseGenresJson(show.genres).map((name) => ({ name: genreLabel(language, name) })),
         status: show.tmdbStatus,
       },
       seasons,
@@ -136,7 +208,8 @@ export async function getShowWithSeasons(id: string) {
     };
   }
 
-  const details = await getShowDetails(show.tmdbId!);
+  const lang = tmdbLanguage(language);
+  const details = await getShowDetails(show.tmdbId, undefined, lang);
 
   if (show.totalEpisodes !== details.number_of_episodes) {
     await prisma.show
@@ -147,45 +220,34 @@ export async function getShowWithSeasons(id: string) {
       .catch(() => undefined);
   }
 
-  const seasons = await Promise.all(
-    Array.from({ length: details.number_of_seasons }, (_, i) => i + 1).map(
-      async (seasonNumber) => {
-        const season = await getSeasonDetails(show.tmdbId!, seasonNumber);
-        const episodes = season.episodes.map((ep) => {
-          const watch = watchedMap.get(`${ep.season_number}-${ep.episode_number}`);
-          return {
-            ...ep,
-            watched: watch?.watched ?? false,
-            watchedAt: watch?.watchedAt ?? null,
-            rating: watch?.rating ?? null,
-            watchId: watch
-              ? `${show.id}-${ep.season_number}-${ep.episode_number}`
-              : null,
-          };
-        });
-        return {
-          ...season,
-          episodes,
-          watchedCount: episodes.filter((e) => e.watched).length,
-        };
-      },
-    ),
+  const seasons = await loadTmdbSeasons(
+    show.tmdbId,
+    details.number_of_seasons,
+    lang,
+    watchedMap,
+    show.id,
   );
 
-  const watchedInListed = seasons.reduce((s, season) => s + season.watchedCount, 0);
-
   return {
+    inLibrary: true as const,
     show,
+    display: {
+      title: details.name || stored.title,
+      overview: details.overview || stored.overview,
+    },
     details,
     seasons,
-    watchedCount: watchedInListed,
+    watchedCount: seasons.reduce((s, season) => s + season.watchedCount, 0),
     totalEpisodes: details.number_of_episodes,
   };
 }
 
 export async function addShowToLibrary(tmdbId: number, inWatchlist = true) {
   const userId = await requireUserId();
-  const details = await getShowDetails(tmdbId);
+  const [details, english] = await Promise.all([
+    getShowDetails(tmdbId),
+    getEnglishShowText(tmdbId).catch(() => null),
+  ]);
   const external = details.external_ids;
   const meta = genresFromTmdb(details);
 
@@ -196,6 +258,7 @@ export async function addShowToLibrary(tmdbId: number, inWatchlist = true) {
     imdbId: external?.imdb_id ?? null,
     title: details.name,
     overview: details.overview,
+    ...english,
     posterPath: details.poster_path,
     backdropPath: details.backdrop_path,
     firstAirDate: details.first_air_date,
@@ -211,7 +274,7 @@ export async function addShowToLibrary(tmdbId: number, inWatchlist = true) {
       () =>
         prisma.show.update({
           where: { id: existing.id },
-          data: { ...meta, totalEpisodes: details.number_of_episodes },
+          data: { ...meta, ...english, totalEpisodes: details.number_of_episodes },
         }),
       () =>
         prisma.show.update({
@@ -291,8 +354,14 @@ export async function updateShowDetails(
   if (!show) throw new Error("Show not found");
 
   const data: Record<string, unknown> = {};
-  if (input.title != null) data.title = input.title.trim();
-  if (input.overview !== undefined) data.overview = input.overview;
+  if (input.title != null && input.title.trim() !== show.title) {
+    data.title = input.title.trim();
+    data.titleEn = null;
+  }
+  if (input.overview !== undefined && input.overview !== show.overview) {
+    data.overview = input.overview;
+    data.overviewEn = null;
+  }
   if (input.posterPath !== undefined) data.posterPath = input.posterPath;
   if (input.backdropPath !== undefined) data.backdropPath = input.backdropPath;
   if (input.firstAirDate !== undefined) data.firstAirDate = input.firstAirDate;
@@ -616,7 +685,11 @@ export async function getDashboardStats(userId?: string) {
 
 const FINISHED_PAGE_SIZE = 24;
 
-export async function getFinishedShowsPage(page = 1, pageSize = FINISHED_PAGE_SIZE) {
+export async function getFinishedShowsPage(
+  page = 1,
+  language: Language = "pt",
+  pageSize = FINISHED_PAGE_SIZE,
+) {
   const userId = await requireUserId();
   const safePage = Math.max(1, page);
   const where = {
@@ -633,6 +706,7 @@ export async function getFinishedShowsPage(page = 1, pageSize = FINISHED_PAGE_SI
         id: true,
         tmdbId: true,
         title: true,
+        titleEn: true,
         posterPath: true,
         status: true,
         updatedAt: true,
@@ -653,6 +727,7 @@ export async function getFinishedShowsPage(page = 1, pageSize = FINISHED_PAGE_SI
   return {
     shows: shows.map((s) => ({
       ...s,
+      title: localizedTitle(language, s),
       watchedCount: s._count.episodes,
       href: showPath(s),
     })),
@@ -663,14 +738,29 @@ export async function getFinishedShowsPage(page = 1, pageSize = FINISHED_PAGE_SI
   };
 }
 
-export async function getImportLog(id: string) {
+export async function getImportLog(id: string, language: Language = "pt") {
   const userId = await requireUserId();
-  return prisma.importLog.findFirst({
+  const log = await prisma.importLog.findFirst({
     where: { id, userId },
     include: {
       addedShows: { orderBy: { episodesAdded: "desc" } },
     },
   });
+  if (!log || language === "pt") return log;
+
+  const tmdbIds = log.addedShows.flatMap((s) => (s.tmdbId != null ? [s.tmdbId] : []));
+  const english = await prisma.show.findMany({
+    where: { userId, tmdbId: { in: tmdbIds }, titleEn: { not: null } },
+    select: { tmdbId: true, titleEn: true },
+  });
+  const titleByTmdb = new Map(english.map((s) => [s.tmdbId, s.titleEn]));
+  return {
+    ...log,
+    addedShows: log.addedShows.map((s) => ({
+      ...s,
+      title: (s.tmdbId != null && titleByTmdb.get(s.tmdbId)) || s.title,
+    })),
+  };
 }
 
 export async function getImportLogs() {

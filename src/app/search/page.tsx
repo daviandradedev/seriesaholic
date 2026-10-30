@@ -24,7 +24,7 @@ export default function SearchPage() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [requestQuery, setRequestQuery] = useState<string | null>(null);
   const [adding, setAdding] = useState<number | null>(null);
-  const { t } = usePreferences();
+  const { language, t } = usePreferences();
 
   useEffect(() => {
     if (query.length < 2) return;
@@ -42,7 +42,7 @@ export default function SearchPage() {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, language]);
 
   const loading = query.length >= 2 && requestQuery !== query;
   const visibleResults = query.length < 2 || requestQuery !== query ? [] : results;

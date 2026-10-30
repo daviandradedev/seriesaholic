@@ -7,6 +7,7 @@ import {
   deleteShow,
 } from "@/lib/shows";
 import type { ShowStatus } from "@prisma/client";
+import { getTranslator } from "@/lib/i18n";
 import { jsonError } from "@/lib/session-user";
 
 export async function GET(
@@ -14,8 +15,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await params;
-    const data = await getShowWithSeasons(id);
+    const [{ id }, { language }] = await Promise.all([params, getTranslator()]);
+    const data = await getShowWithSeasons(id, language);
     if (!data) {
       return NextResponse.json({ error: "Show not found" }, { status: 404 });
     }

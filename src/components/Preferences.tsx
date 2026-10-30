@@ -2,7 +2,15 @@
 
 import { Moon, Sun } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { translate, type CopyKey } from "@/lib/copy";
 import {
   browserLanguage,
@@ -99,8 +107,10 @@ export function PreferencesProvider({
     router.refresh();
   };
 
-  const t = (key: CopyKey, vars?: Record<string, string | number>) =>
-    translate(language, key, vars);
+  const t = useCallback(
+    (key: CopyKey, vars?: Record<string, string | number>) => translate(language, key, vars),
+    [language],
+  );
 
   return (
     <PreferencesContext.Provider value={{ theme, language, ready, toggleTheme, toggleLanguage, t }}>
