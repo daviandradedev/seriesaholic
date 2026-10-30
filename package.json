@@ -15,6 +15,7 @@
     "db:generate": "prisma generate",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:backfill-english": "tsx prisma/backfill-english.ts",
+    "db:refresh-aired": "tsx prisma/refresh-aired.ts",
     "db:setup": "prisma migrate deploy && prisma generate && npx tsx prisma/seed.ts",
     "postinstall": "prisma generate"
   },

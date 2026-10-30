@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { prisma } from "@/lib/db";
 import {
   getEnglishShowText,
@@ -473,8 +474,9 @@ export async function toggleEpisodeWatch(
   }
 
   if (show.tmdbId != null && !show.isCustom) {
-    void fillWatchMetadata(show.id, show.tmdbId, seasonNumber, episodeNumber, watched).catch(
-      () => undefined,
+    const tmdbId = show.tmdbId;
+    after(() =>
+      fillWatchMetadata(show.id, tmdbId, seasonNumber, episodeNumber, watched).catch(() => undefined),
     );
   }
 
@@ -541,13 +543,13 @@ export async function setEpisodesWatched(
   }
 
   if (show.tmdbId != null && !show.isCustom) {
-    void fillSeasonWatchMetadata(
-      show.id,
-      show.tmdbId,
-      seasonNumber,
-      list.map(([episodeNumber]) => episodeNumber),
-      watched,
-    ).catch(() => undefined);
+    const tmdbId = show.tmdbId;
+    const episodeNumbers = list.map(([episodeNumber]) => episodeNumber);
+    after(() =>
+      fillSeasonWatchMetadata(show.id, tmdbId, seasonNumber, episodeNumbers, watched).catch(
+        () => undefined,
+      ),
+    );
   }
 
   return refreshShowProgress(show);

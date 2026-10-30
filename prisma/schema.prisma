@@ -37,6 +37,8 @@ model Show {
   tmdbStatus          String?
   totalEpisodes       Int?
   unwatchedAiredCount Int?
+  nextAirDate         String?
+  airedCheckedAt      DateTime?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
   episodes            EpisodeWatch[]

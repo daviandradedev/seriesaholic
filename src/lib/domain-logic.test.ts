@@ -2,12 +2,12 @@ import {
   buildGenreWeights,
   catchUpEpisodesPerWeek,
   classifyShowQueueBucket,
-  classifyShowQueueBucketFromLibrary,
   inferLibraryStatus,
   isRegularSeason,
   isShowEnded,
   isShowInProduction,
   libraryStatusFromQueueBucket,
+  pendingAiredEpisodes,
   scoreShowCompatibility,
   sumRealMinutes,
 } from "@/lib/domain-logic";
@@ -109,281 +109,114 @@ describe("libraryStatusFromQueueBucket", () => {
   });
 });
 
-describe("classifyShowQueueBucketFromLibrary", () => {
-  it("classifies without TMDB air dates", () => {
-    expect(
-      classifyShowQueueBucketFromLibrary({
-        isDropped: false,
-        watchedCount: 0,
-        watchedRecently: false,
-        status: "PLAN_TO_WATCH",
-        tmdbStatus: "Returning Series",
-        inWatchlist: true,
-      }),
-    ).toBe("notStarted");
-
-    expect(
-      classifyShowQueueBucketFromLibrary({
-        isDropped: false,
-        watchedCount: 0,
-        watchedRecently: false,
-        status: "PLAN_TO_WATCH",
-        tmdbStatus: "Returning Series",
-        inWatchlist: false,
-      }),
-    ).toBeNull();
-
-    expect(
-      classifyShowQueueBucketFromLibrary({
-        isDropped: false,
-        watchedCount: 5,
-        watchedRecently: true,
-        status: "WATCHING",
-        tmdbStatus: "Returning Series",
-        unwatchedAiredCount: 2,
-      }),
-    ).toBe("watchNext");
-
-    expect(
-      classifyShowQueueBucketFromLibrary({
-        isDropped: false,
-        watchedCount: 8,
-        watchedRecently: true,
-        status: "WATCHING",
-        tmdbStatus: "Returning Series",
-        unwatchedAiredCount: 0,
-      }),
-    ).toBe("upToDate");
-
-    expect(
-      classifyShowQueueBucketFromLibrary({
-        isDropped: false,
-        watchedCount: 10,
-        watchedRecently: false,
-        status: "COMPLETED",
-        tmdbStatus: "Ended",
-      }),
-    ).toBe("finished");
-
-    expect(
-      classifyShowQueueBucketFromLibrary({
-        isDropped: false,
-        watchedCount: 1,
-        watchedRecently: false,
-        status: "COMPLETED",
-        tmdbStatus: "Ended",
-      }),
-    ).toBe("finished");
-
-    expect(
-      classifyShowQueueBucketFromLibrary({
-        isDropped: false,
-        watchedCount: 5,
-        watchedRecently: false,
-        status: "WATCHING",
-        tmdbStatus: "Returning Series",
-      }),
-    ).toBe("upToDate");
-
-    expect(
-      classifyShowQueueBucketFromLibrary({
-        isDropped: false,
-        watchedCount: 10,
-        watchedRecently: true,
-        status: "WATCHING",
-        tmdbStatus: "Returning Series",
-        totalEpisodes: 10,
-        unwatchedAiredCount: 0,
-      }),
-    ).toBe("upToDate");
-
-    expect(
-      classifyShowQueueBucketFromLibrary({
-        isDropped: false,
-        watchedCount: 10,
-        watchedRecently: true,
-        status: "WATCHING",
-        tmdbStatus: "Returning Series",
-        totalEpisodes: 10,
-        unwatchedAiredCount: 3,
-      }),
-    ).toBe("upToDate");
-
-    expect(
-      classifyShowQueueBucketFromLibrary({
-        isDropped: false,
-        watchedCount: 3,
-        watchedRecently: false,
-        status: "WATCHING",
-        tmdbStatus: null,
-      }),
-    ).toBe("upToDate");
-
-    expect(
-      classifyShowQueueBucketFromLibrary({
-        isDropped: false,
-        watchedCount: 2,
-        watchedRecently: false,
-        status: "PLAN_TO_WATCH",
-        tmdbStatus: "Ended",
-        inWatchlist: true,
-      }),
-    ).toBe("upToDate");
-
-    expect(
-      classifyShowQueueBucketFromLibrary({
-        isDropped: false,
-        watchedCount: 4,
-        watchedRecently: false,
-        status: "WATCHING",
-        tmdbStatus: "Ended",
-        totalEpisodes: 121,
-      }),
-    ).toBe("backlog");
-
-    expect(
-      classifyShowQueueBucketFromLibrary({
-        isDropped: false,
-        watchedCount: 1,
-        watchedRecently: false,
-        status: "WATCHING",
-        tmdbStatus: "Ended",
-        totalEpisodes: 1,
-      }),
-    ).toBe("finished");
+describe("pendingAiredEpisodes", () => {
+  it("counts nothing pending once every episode is watched", () => {
+    expect(pendingAiredEpisodes({ watchedCount: 10, totalEpisodes: 10, unwatchedAiredCount: 3 })).toBe(0);
   });
 
-  it("keeps a fully watched ended show out of the active queue", () => {
+  it("adds the next episode once its air date has passed", () => {
+    expect(
+      pendingAiredEpisodes({
+        watchedCount: 8,
+        totalEpisodes: 10,
+        unwatchedAiredCount: 0,
+        nextAirDate: "2026-10-29",
+        today: "2026-10-30",
+      }),
+    ).toBe(1);
+    expect(
+      pendingAiredEpisodes({
+        watchedCount: 8,
+        totalEpisodes: 10,
+        unwatchedAiredCount: 0,
+        nextAirDate: "2026-11-05",
+        today: "2026-10-30",
+      }),
+    ).toBe(0);
+  });
+
+  it("falls back to the episode total and returns null without data", () => {
+    expect(pendingAiredEpisodes({ watchedCount: 4, totalEpisodes: 121 })).toBe(117);
+    expect(pendingAiredEpisodes({ watchedCount: 4 })).toBeNull();
+  });
+});
+
+describe("classifyShowQueueBucket", () => {
+  const base = {
+    isDropped: false,
+    watchedRecently: false,
+    tmdbStatus: "Returning Series",
+    status: "WATCHING" as const,
+  };
+
+  it("keeps dropped and unstarted shows in their own lists", () => {
+    expect(classifyShowQueueBucket({ ...base, isDropped: true, watchedCount: 5 })).toBe("dropped");
+    expect(classifyShowQueueBucket({ ...base, watchedCount: 0, inWatchlist: true })).toBe("notStarted");
+    expect(classifyShowQueueBucket({ ...base, watchedCount: 0, inWatchlist: false })).toBeNull();
+  });
+
+  it("puts a show with aired episodes left in Watch now when marked in the last 45 days", () => {
     expect(
       classifyShowQueueBucket({
-        isDropped: false,
-        watchedCount: 121,
-        unwatchedAiredCount: 5,
-        recentUnwatchedCount: 0,
-        watchedRecently: false,
-        tmdbStatus: "Ended",
-        totalEpisodes: 121,
+        ...base,
+        watchedCount: 143,
+        totalEpisodes: 145,
+        unwatchedAiredCount: 2,
+        watchedRecently: true,
       }),
-    ).toBe("finished");
+    ).toBe("watchNext");
+  });
 
+  it("puts a show with aired episodes left in Behind when nothing was marked in 45 days", () => {
     expect(
-      classifyShowQueueBucketFromLibrary({
-        isDropped: false,
-        watchedCount: 121,
-        watchedRecently: false,
-        status: "WATCHING",
-        tmdbStatus: "Ended",
-        totalEpisodes: 121,
-        unwatchedAiredCount: 8,
+      classifyShowQueueBucket({ ...base, watchedCount: 143, totalEpisodes: 145, unwatchedAiredCount: 2 }),
+    ).toBe("backlog");
+    expect(
+      classifyShowQueueBucket({ ...base, watchedCount: 4, totalEpisodes: 121, tmdbStatus: "Ended" }),
+    ).toBe("backlog");
+  });
+
+  it("keeps a show with every aired episode watched in Up to date while it is still running", () => {
+    expect(
+      classifyShowQueueBucket({ ...base, watchedCount: 10, totalEpisodes: 12, unwatchedAiredCount: 0 }),
+    ).toBe("upToDate");
+    expect(
+      classifyShowQueueBucket({ ...base, watchedCount: 10, totalEpisodes: 10, unwatchedAiredCount: 3 }),
+    ).toBe("upToDate");
+  });
+
+  it("moves an up-to-date show to Watch now once a new episode airs", () => {
+    expect(
+      classifyShowQueueBucket({
+        ...base,
+        watchedCount: 10,
+        totalEpisodes: 12,
+        unwatchedAiredCount: 0,
+        nextAirDate: "2026-10-29",
+        today: "2026-10-30",
+        watchedRecently: true,
       }),
+    ).toBe("watchNext");
+  });
+
+  it("finishes a show only when every episode is watched and it will not return", () => {
+    expect(
+      classifyShowQueueBucket({ ...base, watchedCount: 121, totalEpisodes: 121, unwatchedAiredCount: 5, tmdbStatus: "Ended" }),
     ).toBe("finished");
+    expect(
+      classifyShowQueueBucket({ ...base, watchedCount: 24, totalEpisodes: 24, tmdbStatus: "Canceled" }),
+    ).toBe("finished");
+    expect(classifyShowQueueBucket({ ...base, watchedCount: 1, status: "COMPLETED", tmdbStatus: "Ended" })).toBe(
+      "finished",
+    );
+  });
+
+  it("leaves a show without episode data in Up to date", () => {
+    expect(classifyShowQueueBucket({ ...base, watchedCount: 3, tmdbStatus: null })).toBe("upToDate");
   });
 });
 
 describe("domain-logic", () => {
-  it("classifies the full queue with the confirmed flow", () => {
-    expect(
-      classifyShowQueueBucket({
-        isDropped: true,
-        watchedCount: 5,
-        unwatchedAiredCount: 2,
-        recentUnwatchedCount: 1,
-        watchedRecently: false,
-        tmdbStatus: "Returning Series",
-      }),
-    ).toBe("dropped");
-
-    expect(
-      classifyShowQueueBucket({
-        isDropped: false,
-        watchedCount: 0,
-        unwatchedAiredCount: 10,
-        recentUnwatchedCount: 0,
-        watchedRecently: false,
-        tmdbStatus: "Returning Series",
-        inWatchlist: true,
-      }),
-    ).toBe("notStarted");
-
-    expect(
-      classifyShowQueueBucket({
-        isDropped: false,
-        watchedCount: 0,
-        unwatchedAiredCount: 10,
-        recentUnwatchedCount: 0,
-        watchedRecently: false,
-        tmdbStatus: "Returning Series",
-        inWatchlist: false,
-      }),
-    ).toBeNull();
-
-    expect(
-      classifyShowQueueBucket({
-        isDropped: false,
-        watchedCount: 3,
-        unwatchedAiredCount: 2,
-        recentUnwatchedCount: 2,
-        watchedRecently: false,
-        tmdbStatus: "Returning Series",
-      }),
-    ).toBe("backlog");
-
-    expect(
-      classifyShowQueueBucket({
-        isDropped: false,
-        watchedCount: 3,
-        unwatchedAiredCount: 5,
-        recentUnwatchedCount: 0,
-        watchedRecently: true,
-        tmdbStatus: "Returning Series",
-      }),
-    ).toBe("watchNext");
-
-    expect(
-      classifyShowQueueBucket({
-        isDropped: false,
-        watchedCount: 3,
-        unwatchedAiredCount: 5,
-        recentUnwatchedCount: 0,
-        watchedRecently: false,
-        tmdbStatus: "Returning Series",
-      }),
-    ).toBe("backlog");
-
-    expect(
-      classifyShowQueueBucket({
-        isDropped: false,
-        watchedCount: 10,
-        unwatchedAiredCount: 0,
-        recentUnwatchedCount: 0,
-        watchedRecently: true,
-        tmdbStatus: "Returning Series",
-      }),
-    ).toBe("upToDate");
-
-    expect(
-      classifyShowQueueBucket({
-        isDropped: false,
-        watchedCount: 10,
-        unwatchedAiredCount: 0,
-        recentUnwatchedCount: 0,
-        watchedRecently: false,
-        tmdbStatus: "Returning Series",
-      }),
-    ).toBe("upToDate");
-
-    expect(
-      classifyShowQueueBucket({
-        isDropped: false,
-        watchedCount: 10,
-        unwatchedAiredCount: 0,
-        recentUnwatchedCount: 0,
-        watchedRecently: false,
-        tmdbStatus: "Ended",
-      }),
-    ).toBe("finished");
-  });
-
   it("scores compatibility by genre", () => {
     const profile = buildGenreWeights([
       { genres: ["Drama", "Thriller"], episodeCount: 100 },

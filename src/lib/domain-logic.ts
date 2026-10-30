@@ -112,98 +112,41 @@ export function isShowEnded(status: string | null | undefined): boolean {
   );
 }
 
-export function isShowFullyWatched(watchedCount: number, totalEpisodes: number) {
-  return totalEpisodes > 0 && watchedCount >= totalEpisodes;
-}
-
-export function isFinishedQueueShow(input: {
-  status?: LibraryStatus;
+export function pendingAiredEpisodes(input: {
   watchedCount: number;
   totalEpisodes?: number | null;
   unwatchedAiredCount?: number | null;
-  tmdbStatus?: string | null | undefined;
-}): boolean {
-  if (input.watchedCount <= 0) return false;
-  if (input.status === "COMPLETED") return true;
-
-  const ended = isShowEnded(input.tmdbStatus);
-  if (!ended) return false;
-
-  const catalogComplete =
-    input.totalEpisodes != null &&
-    input.totalEpisodes > 0 &&
-    input.watchedCount >= input.totalEpisodes;
-  if (catalogComplete) return true;
-
-  if (input.unwatchedAiredCount === 0) {
-    if (
-      input.totalEpisodes != null &&
-      input.totalEpisodes > 0 &&
-      input.watchedCount < input.totalEpisodes
-    ) {
-      return false;
-    }
-    return true;
-  }
-
-  return false;
+  nextAirDate?: string | null;
+  today?: string;
+}): number | null {
+  const total = input.totalEpisodes ?? 0;
+  if (total > 0 && input.watchedCount >= total) return 0;
+  const newlyAired =
+    input.nextAirDate && input.today && input.nextAirDate <= input.today ? 1 : 0;
+  if (input.unwatchedAiredCount != null) return input.unwatchedAiredCount + newlyAired;
+  return total > 0 ? total - input.watchedCount : null;
 }
 
 export function classifyShowQueueBucket(input: {
   isDropped: boolean;
   watchedCount: number;
-  unwatchedAiredCount: number;
-  recentUnwatchedCount: number;
   watchedRecently: boolean;
   tmdbStatus: string | null | undefined;
-  inWatchlist?: boolean;
-  totalEpisodes?: number;
   status?: LibraryStatus;
+  inWatchlist?: boolean;
+  totalEpisodes?: number | null;
+  unwatchedAiredCount?: number | null;
+  nextAirDate?: string | null;
+  today?: string;
 }): QueueBucket | null {
-  if (input.isDropped) return "dropped";
-  if (input.watchedCount <= 0) {
-    return input.inWatchlist ? "notStarted" : null;
-  }
+  if (input.isDropped || input.status === "DROPPED") return "dropped";
+  if (input.watchedCount <= 0) return input.inWatchlist ? "notStarted" : null;
+  if (input.status === "COMPLETED") return "finished";
 
-  if (
-    isFinishedQueueShow({
-      status: input.status,
-      watchedCount: input.watchedCount,
-      totalEpisodes: input.totalEpisodes,
-      unwatchedAiredCount: input.unwatchedAiredCount,
-      tmdbStatus: input.tmdbStatus,
-    })
-  ) {
-    return "finished";
-  }
-
-  const fullyWatchedTotal =
-    input.totalEpisodes != null &&
-    isShowFullyWatched(input.watchedCount, input.totalEpisodes);
-
-  if (fullyWatchedTotal) {
-    if (isShowEnded(input.tmdbStatus)) return "finished";
-    return "upToDate";
-  }
-
-  if (input.unwatchedAiredCount === 0) {
-    return "upToDate";
-  }
-
-  if (input.unwatchedAiredCount > 0) {
-    if (
-      isShowEnded(input.tmdbStatus) &&
-      input.totalEpisodes != null &&
-      input.totalEpisodes > 0 &&
-      input.watchedCount >= input.totalEpisodes
-    ) {
-      return "finished";
-    }
-    if (input.watchedRecently) return "watchNext";
-    return "backlog";
-  }
-
-  return "upToDate";
+  const pending = pendingAiredEpisodes(input);
+  if (pending == null) return "upToDate";
+  if (pending > 0) return input.watchedRecently ? "watchNext" : "backlog";
+  return isShowEnded(input.tmdbStatus) ? "finished" : "upToDate";
 }
 
 export function libraryStatusFromQueueBucket(
@@ -217,102 +160,6 @@ export function libraryStatusFromQueueBucket(
     return "WATCHING";
   }
   return null;
-}
-
-export function classifyShowQueueBucketFromLibrary(input: {
-  isDropped: boolean;
-  watchedCount: number;
-  watchedRecently: boolean;
-  status: LibraryStatus;
-  tmdbStatus: string | null | undefined;
-  inWatchlist?: boolean;
-  totalEpisodes?: number;
-  unwatchedAiredCount?: number | null;
-}): QueueBucket | null {
-  if (input.isDropped || input.status === "DROPPED") return "dropped";
-
-  if (input.watchedCount <= 0) {
-    return input.inWatchlist ? "notStarted" : null;
-  }
-
-  if (
-    isFinishedQueueShow({
-      status: input.status,
-      watchedCount: input.watchedCount,
-      totalEpisodes: input.totalEpisodes,
-      unwatchedAiredCount: input.unwatchedAiredCount,
-      tmdbStatus: input.tmdbStatus,
-    })
-  ) {
-    return "finished";
-  }
-
-  const fullyWatched =
-    input.totalEpisodes != null &&
-    isShowFullyWatched(input.watchedCount, input.totalEpisodes);
-
-  if (fullyWatched && input.watchedCount > 0) {
-    if (isShowEnded(input.tmdbStatus)) return "finished";
-    return "upToDate";
-  }
-
-  if (input.unwatchedAiredCount != null) {
-    if (input.unwatchedAiredCount === 0 && input.watchedCount > 0) {
-      return "upToDate";
-    }
-    return classifyShowQueueBucket({
-      isDropped: false,
-      watchedCount: input.watchedCount,
-      unwatchedAiredCount: input.unwatchedAiredCount,
-      recentUnwatchedCount: 0,
-      watchedRecently: input.watchedRecently,
-      tmdbStatus: input.tmdbStatus,
-      inWatchlist: input.inWatchlist,
-      totalEpisodes: input.totalEpisodes,
-      status: input.status,
-    });
-  }
-
-  if (
-    input.totalEpisodes != null &&
-    isShowFullyWatched(input.watchedCount, input.totalEpisodes)
-  ) {
-    if (isShowEnded(input.tmdbStatus) || input.status === "COMPLETED") {
-      return "finished";
-    }
-    return "upToDate";
-  }
-
-  if (
-    isShowEnded(input.tmdbStatus) &&
-    input.totalEpisodes != null &&
-    input.watchedCount < input.totalEpisodes
-  ) {
-    if (input.watchedRecently) return "watchNext";
-    return "backlog";
-  }
-
-  if (isShowEnded(input.tmdbStatus) && input.watchedCount > 0) {
-    if (
-      input.totalEpisodes != null &&
-      input.watchedCount < input.totalEpisodes
-    ) {
-      return "backlog";
-    }
-    if (
-      input.totalEpisodes != null &&
-      input.watchedCount >= input.totalEpisodes
-    ) {
-      return "finished";
-    }
-    return "upToDate";
-  }
-
-  if (isShowInProduction(input.tmdbStatus)) {
-    return "upToDate";
-  }
-
-  return "upToDate";
 }
 
 export function catchUpEpisodesPerWeek(episodesInLast60Days: number): number {

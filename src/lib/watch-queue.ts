@@ -1,19 +1,22 @@
 import { prisma } from "@/lib/db";
 import {
   classifyShowQueueBucket,
-  classifyShowQueueBucketFromLibrary,
   isRegularSeason,
   isShowEnded,
   libraryStatusFromQueueBucket,
+  pendingAiredEpisodes,
   type LibraryStatus,
   type QueueBucket,
 } from "@/lib/domain-logic";
 import { startOfDay, progressPercent, showPath } from "@/lib/utils";
 import { getSeasonDetails, getShowDetails } from "@/lib/tmdb";
 import { requireUserId } from "@/lib/session-user";
+import { invalidateLibraryCache } from "@/lib/cache-tags";
 import type { ShowStatus } from "@prisma/client";
 
-const TWO_MONTHS_MS = 60 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WATCH_NOW_WINDOW_MS = 45 * DAY_MS;
+const AIRED_CHECK_MAX_AGE_MS = 3 * DAY_MS;
 
 export type WatchQueueShow = {
   id: string;
@@ -60,6 +63,7 @@ type ShowRow = {
   inWatchlist: boolean;
   totalEpisodes: number | null;
   unwatchedAiredCount: number | null;
+  nextAirDate: string | null;
   updatedAt: Date;
   episodes: Array<{
     seasonNumber?: number;
@@ -134,6 +138,10 @@ async function mapPool<T, R>(
   return results;
 }
 
+function isoDay(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
 function resolveTotalEpisodes(show: ShowRow, computedCustomTotal: number) {
   if (show.isCustom || show.tmdbId == null) return computedCustomTotal;
   return show.totalEpisodes ?? 0;
@@ -188,7 +196,6 @@ function analyzeShowLocal(
       isDropped: show.status === "DROPPED",
       watchedCount,
       unwatchedAiredCount: unwatchedAired.length,
-      recentUnwatchedCount: recentUnwatched.length,
       watchedRecently,
       tmdbStatus,
       inWatchlist: show.inWatchlist,
@@ -217,32 +224,29 @@ function analyzeShowLocal(
   }
 
   const totalEpisodes = resolveTotalEpisodes(show, watchedCount);
-  const locallyComplete = totalEpisodes > 0 && watchedCount >= totalEpisodes;
-  const effectiveUnwatched = locallyComplete ? 0 : show.unwatchedAiredCount;
+  const pending = pendingAiredEpisodes({
+    watchedCount,
+    totalEpisodes,
+    unwatchedAiredCount: show.unwatchedAiredCount,
+    nextAirDate: show.nextAirDate,
+    today: isoDay(today),
+  });
 
-  const bucket = classifyShowQueueBucketFromLibrary({
+  const bucket = classifyShowQueueBucket({
     isDropped: show.status === "DROPPED",
     watchedCount,
     watchedRecently,
     status: show.status as LibraryStatus,
     tmdbStatus: show.tmdbStatus,
     inWatchlist: show.inWatchlist,
-    totalEpisodes: totalEpisodes || undefined,
-    unwatchedAiredCount: effectiveUnwatched,
+    totalEpisodes,
+    unwatchedAiredCount: pending,
   });
   if (!bucket) return null;
 
   return {
     bucket,
-    entry: toEntry(
-      show,
-      watchedCount,
-      totalEpisodes,
-      effectiveUnwatched ?? 0,
-      0,
-      null,
-      null,
-    ),
+    entry: toEntry(show, watchedCount, totalEpisodes, pending ?? 0, 0, null, null),
   };
 }
 
@@ -332,7 +336,6 @@ async function analyzeShowDeep(
     isDropped: show.status === "DROPPED",
     watchedCount,
     unwatchedAiredCount: pendingAired,
-    recentUnwatchedCount: recentUnwatched.length,
     watchedRecently,
     tmdbStatus,
     inWatchlist: show.inWatchlist,
@@ -383,68 +386,75 @@ async function analyzeShowDeep(
 export async function recomputeShowAiredPending(showId: string) {
   const show = await prisma.show.findUnique({
     where: { id: showId },
-    select: {
-      id: true,
-      tmdbId: true,
-      tmdbStatus: true,
-      episodes: {
-        where: { watched: true, seasonNumber: { gte: 1 } },
-        select: { seasonNumber: true, episodeNumber: true },
-      },
-    },
+    select: { id: true, tmdbId: true, tmdbStatus: true, updatedAt: true },
   });
   if (!show?.tmdbId) return;
 
   const today = startOfDay(new Date());
-  const watched = new Set(
-    show.episodes.map((e) => `${e.seasonNumber}-${e.episodeNumber}`),
-  );
-  const unwatchedAired: Date[] = [];
-  let totalEpisodes = 0;
-  let tmdbStatus = show.tmdbStatus;
+  const details = await getShowDetails(show.tmdbId).catch(() => null);
+  if (!details) return;
 
-  try {
-    const details = await getShowDetails(show.tmdbId);
-    totalEpisodes = details.number_of_episodes;
-    tmdbStatus = details.status || tmdbStatus;
-
-    for (let s = 1; s <= details.number_of_seasons; s++) {
-      let season;
-      try {
-        season = await getSeasonDetails(show.tmdbId, s);
-      } catch {
-        continue;
-      }
-      for (const ep of season.episodes) {
-        if (!ep.air_date) continue;
-        const air = startOfDay(new Date(ep.air_date));
-        if (air > today) continue;
-        const key = `${ep.season_number}-${ep.episode_number}`;
-        if (!watched.has(key)) unwatchedAired.push(air);
-      }
+  const aired: string[] = [];
+  for (let s = 1; s <= details.number_of_seasons; s++) {
+    const season = await getSeasonDetails(show.tmdbId, s).catch(() => null);
+    if (!season) return;
+    for (const ep of season.episodes) {
+      if (!ep.air_date || startOfDay(new Date(ep.air_date)) > today) continue;
+      aired.push(`${ep.season_number}-${ep.episode_number}`);
     }
-  } catch {
-    return;
   }
 
-  const watchedCount = show.episodes.length;
-  let pending = unwatchedAired.length;
-  if (
-    totalEpisodes > 0 &&
-    watchedCount >= totalEpisodes &&
-    isShowEnded(tmdbStatus)
-  ) {
-    pending = 0;
-  }
+  const watchedRows = await prisma.episodeWatch.findMany({
+    where: { showId, watched: true, seasonNumber: { gte: 1 } },
+    select: { seasonNumber: true, episodeNumber: true },
+  });
+  const watched = new Set(watchedRows.map((e) => `${e.seasonNumber}-${e.episodeNumber}`));
+  const tmdbStatus = details.status || show.tmdbStatus;
+  const complete =
+    details.number_of_episodes > 0 && watched.size >= details.number_of_episodes;
 
   await prisma.show.update({
     where: { id: showId },
     data: {
-      unwatchedAiredCount: pending,
-      totalEpisodes,
+      unwatchedAiredCount:
+        complete && isShowEnded(tmdbStatus) ? 0 : aired.filter((key) => !watched.has(key)).length,
+      totalEpisodes: details.number_of_episodes,
       tmdbStatus,
+      nextAirDate: details.next_episode_to_air?.air_date ?? null,
+      airedCheckedAt: new Date(),
+      updatedAt: show.updatedAt,
     },
   });
+}
+
+export async function refreshStaleAiredCounts(userId: string, limit = 6) {
+  const now = new Date();
+  const shows = await prisma.show.findMany({
+    where: {
+      userId,
+      isCustom: false,
+      tmdbId: { not: null },
+      status: { in: ["WATCHING", "PLAN_TO_WATCH"] },
+      episodes: { some: { watched: true } },
+      AND: [
+        { OR: [{ tmdbStatus: null }, { tmdbStatus: { notIn: ["Ended", "Canceled"] } }] },
+        {
+          OR: [
+            { airedCheckedAt: null },
+            { airedCheckedAt: { lt: new Date(now.getTime() - AIRED_CHECK_MAX_AGE_MS) } },
+            { nextAirDate: { lte: isoDay(now) } },
+          ],
+        },
+      ],
+    },
+    select: { id: true },
+    orderBy: { airedCheckedAt: { sort: "asc", nulls: "first" } },
+    take: limit,
+  });
+  for (const show of shows) {
+    await recomputeShowAiredPending(show.id).catch(() => undefined);
+  }
+  if (shows.length > 0) invalidateLibraryCache();
 }
 
 function emptyQueue(): WatchQueue {
@@ -486,6 +496,7 @@ async function loadShowsForFastQueue(userId: string): Promise<ShowRow[]> {
         updatedAt: true,
         totalEpisodes: true,
         unwatchedAiredCount: true,
+        nextAirDate: true,
         episodes: {
           where: { watched: true, seasonNumber: { gte: 1 } },
           select: { watchedAt: true },
@@ -508,6 +519,7 @@ async function loadShowsForFastQueue(userId: string): Promise<ShowRow[]> {
         updatedAt: true,
         totalEpisodes: true,
         unwatchedAiredCount: true,
+        nextAirDate: true,
         episodes: {
           where: { watched: true, seasonNumber: { gte: 1 } },
           select: { seasonNumber: true, episodeNumber: true, watchedAt: true },
@@ -536,7 +548,7 @@ export async function getWatchQueue(
   const userId = options?.userId ?? (await requireUserId());
   const sync = options?.sync === true;
   const today = startOfDay(new Date());
-  const cutoff = new Date(today.getTime() - TWO_MONTHS_MS);
+  const cutoff = new Date(today.getTime() - WATCH_NOW_WINDOW_MS);
   const queue = emptyQueue();
 
   if (!sync) {

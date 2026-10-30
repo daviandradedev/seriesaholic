@@ -140,6 +140,7 @@ export type TmdbShowDetails = TmdbSearchResult & {
   status: string;
   genres: { id: number; name: string }[];
   external_ids?: { imdb_id: string | null; tvdb_id: number | null };
+  next_episode_to_air?: { air_date: string | null } | null;
 };
 
 export type TmdbSeason = {

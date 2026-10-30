@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { after } from "next/server";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { DashboardStatsBar } from "@/components/DashboardStatsBar";
@@ -6,6 +7,7 @@ import { HomeRecommendations } from "@/components/HomeRecommendations";
 import { SignInRequired } from "@/components/SignInRequired";
 import { WatchQueueSection, HOME_QUEUE_PREVIEW } from "@/components/WatchQueueSection";
 import { getCachedHomeLibrary, getCachedHomeUpcoming } from "@/lib/home-data";
+import { refreshStaleAiredCounts } from "@/lib/watch-queue";
 import { getTranslator } from "@/lib/i18n";
 import { getOptionalUserId } from "@/lib/session-user";
 import { formatDate } from "@/lib/utils";
@@ -15,6 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function HomePage() {
   const userId = await getOptionalUserId();
   if (!userId) return <SignInRequired />;
+  after(() => refreshStaleAiredCounts(userId).catch(() => undefined));
   const { t } = await getTranslator();
   const { stats, queue, watchingTmdbIds } = await getCachedHomeLibrary(userId);
 
