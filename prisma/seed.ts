@@ -31,13 +31,9 @@ async function main() {
         if (seen.has(show.id)) continue;
         seen.add(show.id);
 
-        let external: { imdb_id: string | null; tvdb_id: number | null } | undefined;
-        try {
-          const details = await getShowDetails(show.id);
-          external = details.external_ids;
-        } catch {
-          // ok
-        }
+        const external = await getShowDetails(show.id)
+          .then((details) => details.external_ids)
+          .catch(() => undefined);
 
         await prisma.catalogShow.upsert({
           where: { tmdbId: show.id },

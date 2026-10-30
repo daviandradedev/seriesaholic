@@ -33,9 +33,7 @@ model Show {
   firstAirDate String?
   genres       String?
   tmdbStatus   String?
-  /** Total de eps (TMDB ou custom); usado na progress bar da home. */
   totalEpisodes Int?
-  /** Eps já exibidos ainda não assistidos (cache TMDB). */
   unwatchedAiredCount Int?
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
