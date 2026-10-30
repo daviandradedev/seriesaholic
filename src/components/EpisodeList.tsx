@@ -43,6 +43,19 @@ function initialOpenSeasons(seasons: Season[]) {
   return new Set(seasons.filter(seasonInProgress).map((s) => s.season_number));
 }
 
+function episodeKey(ep: Episode) {
+  return `${ep.season_number}-${ep.episode_number}`;
+}
+
+function comesBefore(ep: Episode, target: Episode) {
+  return (
+    ep.season_number < target.season_number ||
+    (ep.season_number === target.season_number && ep.episode_number < target.episode_number)
+  );
+}
+
+type PendingMark = { episode: Episode; previous: Episode[] };
+
 export function EpisodeList({
   showId,
   tmdbId,
@@ -55,17 +68,49 @@ export function EpisodeList({
   onToggle: (patch?: { watchedCount: number; status?: string }) => void;
 }) {
   const id = showId ?? String(tmdbId ?? "");
-  const { t } = usePreferences();
+  const { theme, t } = usePreferences();
+  const light = theme === "light";
   const [openSeasons, setOpenSeasons] = useState<Set<number>>(() =>
     initialOpenSeasons(seasons),
   );
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
   const [seasonBusy, setSeasonBusy] = useState<number | null>(null);
+  const [pendingMark, setPendingMark] = useState<PendingMark | null>(null);
   const clickSeq = useRef(new Map<string, number>());
 
   function episodeWatched(ep: Episode) {
-    const key = `${ep.season_number}-${ep.episode_number}`;
+    const key = episodeKey(ep);
     return key in overrides ? overrides[key] : ep.watched;
+  }
+
+  function unwatchedBefore(target: Episode) {
+    if (target.season_number < 1) return [];
+    return seasons
+      .flatMap((season) => season.episodes)
+      .filter((ep) => ep.season_number >= 1 && !episodeWatched(ep) && comesBefore(ep, target));
+  }
+
+  function requestToggle(ep: Episode, watched: boolean) {
+    const previous = watched ? [] : unwatchedBefore(ep);
+    if (previous.length > 0) {
+      setPendingMark({ episode: ep, previous });
+      return;
+    }
+    void toggleEpisode(ep.season_number, ep.episode_number, ep.name, watched);
+  }
+
+  function markOnlyPending() {
+    if (!pendingMark) return;
+    const { episode } = pendingMark;
+    setPendingMark(null);
+    void toggleEpisode(episode.season_number, episode.episode_number, episode.name, false);
+  }
+
+  function markPendingWithPrevious() {
+    if (!pendingMark) return;
+    const { episode, previous } = pendingMark;
+    setPendingMark(null);
+    void saveEpisodes([...previous, episode], true);
   }
 
   function watchedCountOf(season: Season) {
@@ -122,21 +167,7 @@ export function EpisodeList({
     }
   }
 
-  async function markSeason(seasonNumber: number, watched: boolean) {
-    const season = seasons.find((s) => s.season_number === seasonNumber);
-    if (!season) return;
-    const pending = season.episodes.filter((ep) => episodeWatched(ep) !== watched);
-    if (pending.length === 0) return;
-
-    setOverrides((prev) => {
-      const next = { ...prev };
-      for (const ep of pending) {
-        next[`${ep.season_number}-${ep.episode_number}`] = watched;
-      }
-      return next;
-    });
-    const keys = pending.map((ep) => `${ep.season_number}-${ep.episode_number}`);
-    setSeasonBusy(seasonNumber);
+  async function postSeason(seasonNumber: number, list: Episode[], watched: boolean) {
     try {
       const res = await fetch(`/api/shows/${id}/episodes`, {
         method: "POST",
@@ -144,19 +175,50 @@ export function EpisodeList({
         body: JSON.stringify({
           seasonNumber,
           watched,
-          episodes: pending.map((ep) => ({
+          episodes: list.map((ep) => ({
             episodeNumber: ep.episode_number,
             episodeName: ep.name,
           })),
         }),
       });
-      if (saveWasRejected(res) || !res.ok) {
-        clearOverrides(keys);
-        return;
-      }
-      onToggle(await readWatchPatch(res));
+      if (saveWasRejected(res) || !res.ok) return null;
+      return { patch: await readWatchPatch(res) };
     } catch {
-      clearOverrides(keys);
+      return null;
+    }
+  }
+
+  async function saveEpisodes(episodes: Episode[], watched: boolean) {
+    setOverrides((prev) => {
+      const next = { ...prev };
+      for (const ep of episodes) next[episodeKey(ep)] = watched;
+      return next;
+    });
+    const bySeason = new Map<number, Episode[]>();
+    for (const ep of episodes) {
+      bySeason.set(ep.season_number, [...(bySeason.get(ep.season_number) ?? []), ep]);
+    }
+    const batches = [...bySeason.entries()];
+    let saved = 0;
+    let patch: Awaited<ReturnType<typeof readWatchPatch>>;
+    for (const [seasonNumber, list] of batches) {
+      const result = await postSeason(seasonNumber, list, watched);
+      if (!result) break;
+      patch = result.patch;
+      saved += 1;
+    }
+    clearOverrides(batches.slice(saved).flatMap(([, list]) => list.map(episodeKey)));
+    if (saved > 0) onToggle(patch);
+  }
+
+  async function markSeason(seasonNumber: number, watched: boolean) {
+    const season = seasons.find((s) => s.season_number === seasonNumber);
+    if (!season) return;
+    const pending = season.episodes.filter((ep) => episodeWatched(ep) !== watched);
+    if (pending.length === 0) return;
+    setSeasonBusy(seasonNumber);
+    try {
+      await saveEpisodes(pending, watched);
     } finally {
       setSeasonBusy(null);
     }
@@ -231,20 +293,13 @@ export function EpisodeList({
             {isOpen && (
               <div className="border-t border-white/5">
                 {season.episodes.map((ep) => {
-                  const key = `${ep.season_number}-${ep.episode_number}`;
+                  const key = episodeKey(ep);
                   const watched = episodeWatched(ep);
                   return (
                     <button
                       key={key}
                       type="button"
-                      onClick={() =>
-                        void toggleEpisode(
-                          ep.season_number,
-                          ep.episode_number,
-                          ep.name,
-                          watched,
-                        )
-                      }
+                      onClick={() => requestToggle(ep, watched)}
                       className="flex w-full items-center gap-3 border-b border-white/[0.03] px-4 py-2.5 text-left last:border-0 hover:bg-white/[0.03]"
                     >
                       <div
@@ -272,6 +327,71 @@ export function EpisodeList({
           </div>
         );
       })}
+
+      {pendingMark && (
+        <div
+          className={
+            light
+              ? "fixed inset-0 z-[70] flex items-end justify-center bg-zinc-900/40 p-4 sm:items-center"
+              : "fixed inset-0 z-[70] flex items-end justify-center bg-black/70 p-4 sm:items-center"
+          }
+          onClick={() => setPendingMark(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mark-previous-title"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setPendingMark(null);
+            }}
+            className={
+              light
+                ? "w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 text-zinc-900 shadow-2xl"
+                : "w-full max-w-md rounded-2xl border border-white/10 bg-[#12121a] p-6 text-white shadow-2xl"
+            }
+          >
+            <h2 id="mark-previous-title" className="text-lg font-semibold">
+              {t("markPreviousTitle")}
+            </h2>
+            <p className={light ? "mt-2 text-sm text-zinc-600" : "mt-2 text-sm text-zinc-400"}>
+              {t("markPreviousBody", { n: pendingMark.previous.length })}
+            </p>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingMark(null)}
+                className={
+                  light
+                    ? "rounded-lg px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100"
+                    : "rounded-lg px-4 py-2 text-sm text-zinc-400 hover:bg-white/5"
+                }
+              >
+                {t("cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={markOnlyPending}
+                className={
+                  light
+                    ? "rounded-lg border border-zinc-300 px-4 py-2 text-sm text-zinc-800 hover:bg-zinc-100"
+                    : "rounded-lg border border-white/10 px-4 py-2 text-sm text-zinc-200 hover:bg-white/5"
+                }
+              >
+                {t("markOnlyThis")}
+              </button>
+              <button
+                type="button"
+                autoFocus
+                onClick={markPendingWithPrevious}
+                className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500"
+              >
+                {t("markPreviousConfirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

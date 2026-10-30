@@ -42,13 +42,13 @@ describe("DiscoverCatalog", () => {
   });
 
   it("shows Home pointing at the added shows", () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => ({ shows: [] }) })));
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ shows: [] }))));
     const { container } = renderUi(<DiscoverCatalog signedIn={false} />);
     expect(within(container).getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
   });
 
   it("starts on All and hides For you when signed out", async () => {
-    const fetchMock = vi.fn(async () => ({ json: async () => ({ shows: [], stats: { total: 0, categories: [] } }) }));
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ shows: [], stats: { total: 0, categories: [] } })));
     vi.stubGlobal("fetch", fetchMock);
     renderUi(<DiscoverCatalog signedIn={false} />);
 
@@ -60,7 +60,7 @@ describe("DiscoverCatalog", () => {
   });
 
   it("starts on For you when signed in", async () => {
-    const fetchMock = vi.fn(async () => ({ json: async () => ({ shows: [], profile: { topGenres: [], totalWeightedEpisodes: 0 } }) }));
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ shows: [], profile: { topGenres: [], totalWeightedEpisodes: 0 } })));
     vi.stubGlobal("fetch", fetchMock);
     renderUi(<DiscoverCatalog signedIn />);
 
@@ -246,7 +246,7 @@ describe("EpisodeList", () => {
   });
 
   it("marks the season with a single request", async () => {
-    const fetchMock = vi.fn(
+    const fetchMock = vi.fn<typeof fetch>(
       () =>
         Promise.resolve(
           new Response(JSON.stringify({ watchedCount: 2, status: "WATCHING" }), {
@@ -297,6 +297,105 @@ describe("EpisodeList", () => {
         { episodeNumber: 2, episodeName: "Cat" },
       ],
     });
+    vi.unstubAllGlobals();
+  });
+
+  function twoSeasons() {
+    return [
+      {
+        season_number: 1,
+        name: "Season 1",
+        watchedCount: 1,
+        episodes: [
+          { season_number: 1, episode_number: 1, name: "Pilot", air_date: null, watched: false },
+          { season_number: 1, episode_number: 2, name: "Cat", air_date: null, watched: true },
+        ],
+      },
+      {
+        season_number: 2,
+        name: "Season 2",
+        watchedCount: 0,
+        episodes: [
+          { season_number: 2, episode_number: 1, name: "Return", air_date: null, watched: false },
+          { season_number: 2, episode_number: 2, name: "Finale", air_date: null, watched: false },
+        ],
+      },
+    ];
+  }
+
+  it("asks before marking an episode with unwatched earlier ones and marks them across seasons", async () => {
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(new Response(JSON.stringify({ watchedCount: 4, status: "WATCHING" }), { status: 200 })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = renderUi(
+      <EpisodeList showId="show-1" onToggle={() => {}} seasons={twoSeasons()} />,
+    );
+    const view = within(container);
+
+    fireEvent.click(view.getByRole("button", { name: /Season 2/ }));
+    fireEvent.click(view.getByRole("button", { name: /Finale/ }));
+
+    const dialog = view.getByRole("dialog", { name: "Mark the earlier ones too?" });
+    expect(within(dialog).getByText("2 earlier episode(s) are still unwatched.")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Mark earlier ones too" }));
+    expect(view.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(view.getAllByText("2/2")).toHaveLength(2);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const bodies = fetchMock.mock.calls.map((call) => JSON.parse(String((call[1] as RequestInit).body)));
+    expect(bodies).toEqual([
+      { seasonNumber: 1, watched: true, episodes: [{ episodeNumber: 1, episodeName: "Pilot" }] },
+      {
+        seasonNumber: 2,
+        watched: true,
+        episodes: [
+          { episodeNumber: 1, episodeName: "Return" },
+          { episodeNumber: 2, episodeName: "Finale" },
+        ],
+      },
+    ]);
+    vi.unstubAllGlobals();
+  });
+
+  it("marks only the clicked episode when the earlier ones are skipped", async () => {
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(new Response(JSON.stringify({ watchedCount: 2, status: "WATCHING" }), { status: 200 })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = renderUi(
+      <EpisodeList showId="show-1" onToggle={() => {}} seasons={twoSeasons()} />,
+    );
+    const view = within(container);
+
+    fireEvent.click(view.getByRole("button", { name: /Season 2/ }));
+    fireEvent.click(view.getByRole("button", { name: /Finale/ }));
+    fireEvent.click(view.getByRole("button", { name: "Only this one" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      seasonNumber: 2,
+      episodeNumber: 2,
+      episodeName: "Finale",
+      watched: true,
+    });
+    expect(view.getByRole("button", { name: /Season 1/ })).toHaveTextContent("1/2");
+    expect(view.getByRole("button", { name: /Season 2/ })).toHaveTextContent("1/2");
+    vi.unstubAllGlobals();
+  });
+
+  it("does not ask when unmarking an episode", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => undefined)));
+    const { container } = renderUi(
+      <EpisodeList showId="show-1" onToggle={() => {}} seasons={twoSeasons()} />,
+    );
+    const view = within(container);
+
+    fireEvent.click(view.getByRole("button", { name: /Cat/ }));
+    expect(view.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(view.getByRole("button", { name: /Season 1/ })).toHaveTextContent("0/2");
     vi.unstubAllGlobals();
   });
 });
