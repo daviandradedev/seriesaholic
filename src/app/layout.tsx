@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { cookies } from "next/headers";
 import { translate } from "@/lib/copy";
 import { GuestSessionModal } from "@/components/GuestSessionModal";
+import { SessionKeepAlive } from "@/components/SessionKeepAlive";
 import { NavBar } from "@/components/NavBar";
 import { SiteFooter } from "@/components/SiteFooter";
 import { PreferencesProvider } from "@/components/Preferences";
@@ -55,7 +56,7 @@ export default async function RootLayout({
       <body className="flex min-h-full flex-col bg-[#0a0a0f] text-zinc-100">
         <PreferencesProvider initialTheme={initialTheme} initialLanguage={initialLanguage}>
           <TopLoader />
-          {!user && <GuestSessionModal />}
+          {user ? <SessionKeepAlive /> : <GuestSessionModal />}
           <NavBar
             user={
               user
