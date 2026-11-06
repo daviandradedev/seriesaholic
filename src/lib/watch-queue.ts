@@ -37,6 +37,7 @@ export type WatchQueueShow = {
   tmdbStatus: string | null;
   href: string;
   updatedAt: string;
+  createdAt: string;
 };
 
 export type WatchQueue = {
@@ -67,6 +68,7 @@ type ShowRow = {
   unwatchedAiredCount: number | null;
   nextAirDate: string | null;
   updatedAt: Date;
+  createdAt: Date;
   episodes: Array<{
     seasonNumber?: number;
     episodeNumber?: number;
@@ -92,6 +94,7 @@ function toEntry(
     status: ShowStatus;
     tmdbStatus: string | null;
     updatedAt: Date | string;
+    createdAt: Date | string;
   },
   watchedCount: number,
   totalEpisodes: number,
@@ -121,6 +124,7 @@ function toEntry(
     tmdbStatus: show.tmdbStatus,
     href: showPath(show),
     updatedAt,
+    createdAt: new Date(show.createdAt).toISOString(),
   };
 }
 
@@ -523,6 +527,7 @@ async function loadShowsForFastQueue(userId: string): Promise<ShowRow[]> {
         isCustom: true,
         inWatchlist: true,
         updatedAt: true,
+        createdAt: true,
         totalEpisodes: true,
         unwatchedAiredCount: true,
         nextAirDate: true,
@@ -546,6 +551,7 @@ async function loadShowsForFastQueue(userId: string): Promise<ShowRow[]> {
         isCustom: true,
         inWatchlist: true,
         updatedAt: true,
+        createdAt: true,
         totalEpisodes: true,
         unwatchedAiredCount: true,
         nextAirDate: true,

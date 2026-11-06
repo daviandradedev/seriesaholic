@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { getDashboardStats } from "@/lib/shows";
 import { getWatchQueue } from "@/lib/watch-queue";
+import { recentlyAddedShows } from "@/lib/domain-logic";
 import { getUpcomingEpisodes, tmdbLanguage } from "@/lib/tmdb";
 import type { Language } from "@/lib/copy";
 import { HOME_TMDB_CACHE_TAG, LIBRARY_CACHE_TAG } from "@/lib/cache-tags";
@@ -21,7 +22,12 @@ async function loadHomeLibrary(userId: string) {
     .filter((id, i, arr) => arr.indexOf(id) === i)
     .slice(0, 12);
 
-  return { stats, queue, watchingTmdbIds };
+  return {
+    stats,
+    queue,
+    recentlyAdded: recentlyAddedShows(Object.values(queue).flat()),
+    watchingTmdbIds,
+  };
 }
 
 export const getCachedHomeLibrary = unstable_cache(loadHomeLibrary, ["home-library"], {

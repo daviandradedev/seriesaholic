@@ -149,6 +149,17 @@ export function classifyShowQueueBucket(input: {
   return isShowEnded(input.tmdbStatus) ? "finished" : "upToDate";
 }
 
+export function recentlyAddedShows<T extends { createdAt: string }>(
+  shows: T[],
+  now = Date.now(),
+  days = 30,
+): T[] {
+  const cutoff = now - days * 24 * 60 * 60 * 1000;
+  return shows
+    .filter((show) => Date.parse(show.createdAt) >= cutoff)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
 export function libraryStatusFromQueueBucket(
   bucket: QueueBucket,
   currentStatus: LibraryStatus,

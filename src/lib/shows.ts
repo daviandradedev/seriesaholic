@@ -18,7 +18,7 @@ import { recomputeShowAiredPending } from "@/lib/watch-queue";
 import { getOptionalUserId, requireUserId } from "@/lib/session-user";
 import { genreLabel, localizedOverview, localizedTitle } from "@/lib/localized";
 import type { Language } from "@/lib/copy";
-import type { ShowStatus } from "@prisma/client";
+import type { Prisma, ShowStatus } from "@prisma/client";
 
 export { showPath };
 
@@ -685,25 +685,23 @@ export async function getDashboardStats(userId?: string) {
   };
 }
 
-const FINISHED_PAGE_SIZE = 24;
+const LIBRARY_PAGE_SIZE = 24;
+const RECENTLY_ADDED_DAYS = 30;
 
-export async function getFinishedShowsPage(
-  page = 1,
-  language: Language = "pt",
-  pageSize = FINISHED_PAGE_SIZE,
+async function getLibraryShowsPage(
+  where: Prisma.ShowWhereInput,
+  orderBy: Prisma.ShowOrderByWithRelationInput,
+  page: number,
+  language: Language,
 ) {
   const userId = await requireUserId();
   const safePage = Math.max(1, page);
-  const where = {
-    userId,
-    status: "COMPLETED" as const,
-    episodes: { some: { watched: true, seasonNumber: { gte: 1 } } },
-  };
+  const scoped = { ...where, userId };
 
   const [total, shows] = await Promise.all([
-    prisma.show.count({ where }),
+    prisma.show.count({ where: scoped }),
     prisma.show.findMany({
-      where,
+      where: scoped,
       select: {
         id: true,
         tmdbId: true,
@@ -712,19 +710,18 @@ export async function getFinishedShowsPage(
         posterPath: true,
         status: true,
         updatedAt: true,
+        createdAt: true,
         _count: {
           select: {
             episodes: { where: { watched: true, seasonNumber: { gte: 1 } } },
           },
         },
       },
-      orderBy: { updatedAt: "desc" },
-      skip: (safePage - 1) * pageSize,
-      take: pageSize,
+      orderBy,
+      skip: (safePage - 1) * LIBRARY_PAGE_SIZE,
+      take: LIBRARY_PAGE_SIZE,
     }),
   ]);
-
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return {
     shows: shows.map((s) => ({
@@ -734,10 +731,26 @@ export async function getFinishedShowsPage(
       href: showPath(s),
     })),
     page: safePage,
-    pageSize,
     total,
-    totalPages,
+    totalPages: Math.max(1, Math.ceil(total / LIBRARY_PAGE_SIZE)),
   };
+}
+
+export async function getFinishedShowsPage(page = 1, language: Language = "pt") {
+  return getLibraryShowsPage(
+    {
+      status: "COMPLETED",
+      episodes: { some: { watched: true, seasonNumber: { gte: 1 } } },
+    },
+    { updatedAt: "desc" },
+    page,
+    language,
+  );
+}
+
+export async function getRecentShowsPage(page = 1, language: Language = "pt") {
+  const since = new Date(Date.now() - RECENTLY_ADDED_DAYS * 24 * 60 * 60 * 1000);
+  return getLibraryShowsPage({ createdAt: { gte: since } }, { createdAt: "desc" }, page, language);
 }
 
 export async function getImportLog(id: string, language: Language = "pt") {

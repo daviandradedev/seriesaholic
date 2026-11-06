@@ -19,7 +19,7 @@ export default async function HomePage() {
   if (!userId) return <SignInRequired />;
   after(() => refreshStaleAiredCounts(userId).catch(() => undefined));
   const { t } = await getTranslator();
-  const { stats, queue, watchingTmdbIds } = await getCachedHomeLibrary(userId);
+  const { stats, queue, recentlyAdded, watchingTmdbIds } = await getCachedHomeLibrary(userId);
 
   const hasQueue =
     queue.watchNext.length > 0 ||
@@ -97,6 +97,12 @@ export default async function HomePage() {
               />
             );
           })}
+          <WatchQueueSection
+            title={t("recentlyAdded")}
+            shows={recentlyAdded}
+            limit={HOME_QUEUE_PREVIEW}
+            seeAllHref="/shows/recent"
+          />
           <WatchQueueSection
             title={t("finished")}
             shows={queue.finished}

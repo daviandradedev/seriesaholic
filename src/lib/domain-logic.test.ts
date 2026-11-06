@@ -8,6 +8,7 @@ import {
   isShowInProduction,
   libraryStatusFromQueueBucket,
   pendingAiredEpisodes,
+  recentlyAddedShows,
   scoreShowCompatibility,
   sumRealMinutes,
 } from "@/lib/domain-logic";
@@ -106,6 +107,20 @@ describe("libraryStatusFromQueueBucket", () => {
     expect(libraryStatusFromQueueBucket("finished", "WATCHING")).toBe("COMPLETED");
     expect(libraryStatusFromQueueBucket("notStarted", "WATCHING")).toBe("PLAN_TO_WATCH");
     expect(libraryStatusFromQueueBucket("backlog", "PLAN_TO_WATCH")).toBe("WATCHING");
+  });
+});
+
+describe("recentlyAddedShows", () => {
+  it("keeps shows added in the last 30 days, newest first", () => {
+    const now = Date.parse("2026-11-05T12:00:00.000Z");
+    const shows = [
+      { id: "old", createdAt: "2026-09-01T00:00:00.000Z" },
+      { id: "week", createdAt: "2026-10-29T00:00:00.000Z" },
+      { id: "today", createdAt: "2026-11-05T09:00:00.000Z" },
+      { id: "edge", createdAt: "2026-10-06T12:00:00.000Z" },
+    ];
+
+    expect(recentlyAddedShows(shows, now).map((show) => show.id)).toEqual(["today", "week", "edge"]);
   });
 });
 
