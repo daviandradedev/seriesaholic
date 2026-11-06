@@ -12,11 +12,13 @@ import { startOfDay, progressPercent, showPath } from "@/lib/utils";
 import { getSeasonDetails, getShowDetails } from "@/lib/tmdb";
 import { requireUserId } from "@/lib/session-user";
 import { invalidateLibraryCache } from "@/lib/cache-tags";
-import type { ShowStatus } from "@prisma/client";
+import { Prisma, type ShowStatus } from "@prisma/client";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WATCH_NOW_WINDOW_MS = 45 * DAY_MS;
 const AIRED_CHECK_MAX_AGE_MS = 3 * DAY_MS;
+const ENDED_CHECK_MAX_AGE_MS = 30 * DAY_MS;
+const ENDED_STATUSES = ["Ended", "Canceled"];
 
 export type WatchQueueShow = {
   id: string;
@@ -386,7 +388,14 @@ async function analyzeShowDeep(
 export async function recomputeShowAiredPending(showId: string) {
   const show = await prisma.show.findUnique({
     where: { id: showId },
-    select: { id: true, tmdbId: true, tmdbStatus: true, updatedAt: true },
+    select: {
+      id: true,
+      tmdbId: true,
+      tmdbStatus: true,
+      status: true,
+      inWatchlist: true,
+      updatedAt: true,
+    },
   });
   if (!show?.tmdbId) return;
 
@@ -412,12 +421,24 @@ export async function recomputeShowAiredPending(showId: string) {
   const tmdbStatus = details.status || show.tmdbStatus;
   const complete =
     details.number_of_episodes > 0 && watched.size >= details.number_of_episodes;
+  const pending =
+    complete && isShowEnded(tmdbStatus) ? 0 : aired.filter((key) => !watched.has(key)).length;
+  const bucket = classifyShowQueueBucket({
+    isDropped: false,
+    watchedCount: watched.size,
+    watchedRecently: false,
+    tmdbStatus,
+    inWatchlist: show.inWatchlist,
+    totalEpisodes: details.number_of_episodes,
+    unwatchedAiredCount: pending,
+  });
+  const status = bucket ? libraryStatusFromQueueBucket(bucket, show.status as LibraryStatus) : null;
 
   await prisma.show.update({
     where: { id: showId },
     data: {
-      unwatchedAiredCount:
-        complete && isShowEnded(tmdbStatus) ? 0 : aired.filter((key) => !watched.has(key)).length,
+      unwatchedAiredCount: pending,
+      ...(status ? { status } : {}),
       totalEpisodes: details.number_of_episodes,
       tmdbStatus,
       nextAirDate: details.next_episode_to_air?.air_date ?? null,
@@ -434,16 +455,15 @@ export async function refreshStaleAiredCounts(userId: string, limit = 6) {
       userId,
       isCustom: false,
       tmdbId: { not: null },
-      status: { in: ["WATCHING", "PLAN_TO_WATCH"] },
+      status: { in: ["WATCHING", "PLAN_TO_WATCH", "COMPLETED"] },
       episodes: { some: { watched: true } },
-      AND: [
-        { OR: [{ tmdbStatus: null }, { tmdbStatus: { notIn: ["Ended", "Canceled"] } }] },
+      OR: [
+        { airedCheckedAt: null },
+        { nextAirDate: { lte: isoDay(now) } },
+        { airedCheckedAt: { lt: new Date(now.getTime() - ENDED_CHECK_MAX_AGE_MS) } },
         {
-          OR: [
-            { airedCheckedAt: null },
-            { airedCheckedAt: { lt: new Date(now.getTime() - AIRED_CHECK_MAX_AGE_MS) } },
-            { nextAirDate: { lte: isoDay(now) } },
-          ],
+          airedCheckedAt: { lt: new Date(now.getTime() - AIRED_CHECK_MAX_AGE_MS) },
+          OR: [{ tmdbStatus: null }, { tmdbStatus: { notIn: ENDED_STATUSES } }],
         },
       ],
     },
@@ -455,6 +475,15 @@ export async function refreshStaleAiredCounts(userId: string, limit = 6) {
     await recomputeShowAiredPending(show.id).catch(() => undefined);
   }
   if (shows.length > 0) invalidateLibraryCache();
+}
+
+export async function syncLibraryStatuses(userId: string) {
+  const queue = await getWatchQueue({ userId });
+  const ids = queue.finished.filter((show) => show.status !== "COMPLETED").map((show) => show.id);
+  if (ids.length === 0) return 0;
+  await prisma.$executeRaw`UPDATE "Show" SET "status" = 'COMPLETED' WHERE "userId" = ${userId} AND "id" IN (${Prisma.join(ids)})`;
+  invalidateLibraryCache();
+  return ids.length;
 }
 
 function emptyQueue(): WatchQueue {

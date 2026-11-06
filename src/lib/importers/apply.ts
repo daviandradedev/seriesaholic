@@ -19,6 +19,7 @@ import type { ShowStatus } from "@prisma/client";
 import { genresFromTmdb } from "@/lib/genres";
 import { randomUUID } from "crypto";
 import { requireUserId } from "@/lib/session-user";
+import { syncLibraryStatuses } from "@/lib/watch-queue";
 
 export function importItemKey(item: Pick<ImportItem, "ids" | "title">) {
   const showTvdb = item.ids.showTvdb ?? item.ids.tvdb;
@@ -723,6 +724,7 @@ export async function applyImportItems(
       (a, b) => a.season - b.season || a.episode - b.episode,
     ),
   }));
+  await syncLibraryStatuses(userId).catch(() => 0);
   await onProgress?.({
     phase: "complete",
     current: total,

@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { prisma } from "../src/lib/db";
-import { recomputeShowAiredPending } from "../src/lib/watch-queue";
+import { recomputeShowAiredPending, syncLibraryStatuses } from "../src/lib/watch-queue";
 
 const CONCURRENCY = 4;
 
@@ -27,7 +27,10 @@ async function main() {
   const unchecked = await prisma.show.count({
     where: { isCustom: false, tmdbId: { not: null }, airedCheckedAt: null },
   });
-  console.log(`✓ done, ${failed} failed, ${unchecked} still unchecked`);
+  const owners = await prisma.show.findMany({ select: { userId: true }, distinct: ["userId"] });
+  let completed = 0;
+  for (const { userId } of owners) completed += await syncLibraryStatuses(userId);
+  console.log(`✓ done, ${failed} failed, ${unchecked} still unchecked, ${completed} marked as finished`);
 }
 
 main()
