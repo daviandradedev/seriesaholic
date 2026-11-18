@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="daviandrade.dev">
+  <circle cx="32" cy="32" r="32" fill="#e5e3eb"/>
+  <text x="15" y="40" fill="#111111" font-family="'Arial Black', 'Helvetica Neue', sans-serif" font-size="28" font-weight="900">d</text>
+  <rect x="30.5" y="34" width="5" height="5" fill="#2d4024" rx="0.5"/>
+  <text x="36" y="40" fill="#2d4024" font-family="'Arial Black', 'Helvetica Neue', sans-serif" font-size="28" font-weight="900">d</text>
+  <text x="46" y="52" fill="#111111" font-family="'Arial Black', 'Helvetica Neue', sans-serif" font-size="5.5" font-weight="900" transform="rotate(-18 46 52)">daviandrade.dev</text>
+</svg>
