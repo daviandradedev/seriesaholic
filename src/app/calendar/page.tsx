@@ -1,0 +1,162 @@
+import Link from "next/link";
+import { SignInRequired } from "@/components/SignInRequired";
+import { getCalendarShows } from "@/lib/shows";
+import { getSeasonDetails, getShowDetails, tmdbLanguage, type TmdbLanguage } from "@/lib/tmdb";
+import { getTranslator, pageMetadata } from "@/lib/i18n";
+import { localizedTitle } from "@/lib/localized";
+import { getOptionalUserId } from "@/lib/session-user";
+import { localIsoDay, parseCalendarDay } from "@/lib/domain-logic";
+import { formatDate } from "@/lib/utils";
+
+export const dynamic = "force-dynamic";
+
+type CalendarEntry = {
+  tmdbId: number;
+  showTitle: string;
+  seasonNumber: number;
+  episodeNumber: number;
+  episodeName: string;
+  airDate: string;
+};
+
+type WatchingShow = {
+  tmdbId: number | null;
+  title: string;
+};
+
+export function generateMetadata() {
+  return pageMetadata("calendarTitle");
+}
+
+export default async function CalendarPage() {
+  if (!(await getOptionalUserId())) return <SignInRequired />;
+  const { t, language } = await getTranslator();
+  const shows = await getCalendarShows();
+
+  const today = localIsoDay();
+  const endDate = parseCalendarDay(today);
+  endDate.setDate(endDate.getDate() + 30);
+  const end = localIsoDay(endDate);
+
+  const lang = tmdbLanguage(language);
+  const groups = await mapWithConcurrency(shows, 4, (show) =>
+    upcomingForShow({ tmdbId: show.tmdbId, title: localizedTitle(language, show) }, today, end, lang),
+  );
+  const entries = groups.flat();
+
+  entries.sort((a, b) => a.airDate.localeCompare(b.airDate));
+
+  const byDate = entries.reduce<Record<string, CalendarEntry[]>>((acc, entry) => {
+    (acc[entry.airDate] ??= []).push(entry);
+    return acc;
+  }, {});
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-white">{t("calendarTitle")}</h1>
+        <p className="mt-1 text-zinc-400">{t("calendarSubtitle")}</p>
+      </div>
+
+      {Object.keys(byDate).length === 0 ? (
+        <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-8 text-center text-zinc-500">
+          {t("calendarEmpty")}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {Object.entries(byDate).map(([date, eps]) => (
+            <section key={date}>
+              <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-violet-400">
+                {formatDate(date, language)}
+              </h2>
+              <div className="space-y-2">
+                {eps.map((ep) => (
+                  <Link
+                    key={`${ep.tmdbId}-${ep.seasonNumber}-${ep.episodeNumber}`}
+                    href={`/shows/${ep.tmdbId}`}
+                    className="block rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3 hover:bg-white/[0.05]"
+                  >
+                    <p className="font-medium text-white">{ep.showTitle}</p>
+                    <p className="text-sm text-zinc-400">
+                      S{ep.seasonNumber}E{ep.episodeNumber} · {ep.episodeName}
+                    </p>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+async function upcomingForShow(
+  show: WatchingShow,
+  today: string,
+  end: string,
+  language: TmdbLanguage,
+): Promise<CalendarEntry[]> {
+  if (show.tmdbId == null) return [];
+  try {
+    const details = await getShowDetails(show.tmdbId, undefined, language);
+    const lastSeason = details.number_of_seasons;
+    if (lastSeason <= 0) return [];
+
+    const seasonNumbers = [];
+    for (let season = Math.max(1, lastSeason - 1); season <= lastSeason; season++) {
+      seasonNumbers.push(season);
+    }
+
+    const seasons = await Promise.all(
+      seasonNumbers.map(async (seasonNumber) => {
+        try {
+          return await getSeasonDetails(show.tmdbId!, seasonNumber, language);
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    const entries: CalendarEntry[] = [];
+    for (const season of seasons) {
+      if (!season) continue;
+      for (const episode of season.episodes) {
+        if (!episode.air_date) continue;
+        const day = episode.air_date.slice(0, 10);
+        if (day < today || day > end) continue;
+        entries.push({
+          tmdbId: show.tmdbId,
+          showTitle: details.name || show.title,
+          seasonNumber: episode.season_number,
+          episodeNumber: episode.episode_number,
+          episodeName: episode.name,
+          airDate: day,
+        });
+      }
+    }
+    return entries;
+  } catch {
+    return [];
+  }
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+
+  async function worker() {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await mapper(items[index]!);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
