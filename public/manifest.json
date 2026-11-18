@@ -1,0 +1,10 @@
+{
+  "name": "SERIESAHOLIC",
+  "short_name": "SERIESAHOLIC",
+  "description": "Tracker de séries com importação do TV Time",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#7c3aed",
+  "icons": []
+}
