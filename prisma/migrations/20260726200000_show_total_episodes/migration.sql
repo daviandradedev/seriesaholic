@@ -1,0 +1,1 @@
+ALTER TABLE "Show" ADD COLUMN IF NOT EXISTS "totalEpisodes" INTEGER;
