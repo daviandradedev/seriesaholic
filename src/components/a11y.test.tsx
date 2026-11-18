@@ -186,7 +186,15 @@ describe("axe: screens", () => {
         seeAllHref="/shows/finished"
         limit={1}
         shows={[
-          queueShow({ id: "1", status: "COMPLETED", watchedCount: 10, progress: 100, recentUnwatchedCount: 2 }),
+          queueShow({
+            id: "1",
+            status: "COMPLETED",
+            watchedCount: 10,
+            totalEpisodes: 10,
+            progress: 100,
+            unwatchedCount: 0,
+            recentUnwatchedCount: 2,
+          }),
           queueShow({ id: "2", title: "Show B", status: "DROPPED", href: "/shows/2" }),
         ]}
       />,
@@ -478,7 +486,15 @@ describe("status that is not only color", () => {
       <WatchQueueSection
         title="Queue"
         shows={[
-          queueShow({ id: "1", status: "COMPLETED", watchedCount: 10, progress: 100, recentUnwatchedCount: 2 }),
+          queueShow({
+            id: "1",
+            status: "COMPLETED",
+            watchedCount: 10,
+            totalEpisodes: 10,
+            progress: 100,
+            unwatchedCount: 0,
+            recentUnwatchedCount: 2,
+          }),
           queueShow({ id: "2", title: "Show B", status: "DROPPED", href: "/shows/2" }),
         ]}
       />,
